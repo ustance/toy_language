@@ -25,6 +25,7 @@ Node :: enum {
 
 Stack_Value :: union {
 	f32,
+	bool,
 	string,
 }
 
@@ -177,7 +178,9 @@ build_tokens :: proc() -> bool {
 	found := 0;
 
 	for build_pos < build_len {
-		if build_stat() do return true;
+		if build_stat() {
+			return true;
+		}
 		append(&temp_nodes, build_node);
 	}
 
@@ -186,6 +189,8 @@ build_tokens :: proc() -> bool {
 		temp_nodes,
 		0
 	});
+
+	fmt.println(temp_nodes);
 	
 	return false;
 }
@@ -388,12 +393,15 @@ build_ops :: proc(_tk: ^IToken) -> bool {
 }
 
 build_stat :: proc() -> bool {
-	tk := tokens[build_pos];
+	tk := &tokens[build_pos];
+	fmt.println(tk);
 	build_pos += 1;
 	tkn: ^IToken = nil;
 	#partial switch tk.token {
 		case .RET: {
-			if build_expr(0) do return true;
+			if build_expr(0) {
+				return true;
+			}
 
 			build_node = get_node({
 				.RET,
@@ -452,7 +460,9 @@ build_stat :: proc() -> bool {
 							#partial switch op_value {
 								case .SET: {
 									build_pos += 1;
-									if build_expr(0) do return true;
+									if build_expr(0) {
+										return true;
+									}
 
 									anodes := make([dynamic]^INode);
 									append(&anodes, expr);
@@ -466,7 +476,9 @@ build_stat :: proc() -> bool {
 								}
 							}
 						}
-						case: {return true;}
+						case: {
+							return true;
+						}
 					}
 				}
 			}
@@ -488,10 +500,36 @@ get_action :: proc(act: IAction) -> ^IAction {
 	return a;
 }
 
+binop_types :: proc(a: Stack_Value, b: Stack_Value, op: Op) -> Stack_Value {
+	#partial switch f1 in a {
+		case f32: {
+			#partial switch f2 in b {
+				case f32: {
+					#partial switch op {
+						case .ADD: return f1 + f2;
+						case .SUB: return f1 - f2;
+						case .MUL: return f1 * f2;
+						case .FDIV: return f1 / f2;
+						case .EQ:  return f1 == f2;
+						case .NE: return f1 != f2;
+						case .LT: return f1 < f2;
+						case .LE: return f1 <= f2;
+						case .GT: return f1 > f2;
+						case .GE: return f1 >= f2;
+					}
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
 execute :: proc() {
 	length := len(actions);	
 	pos := 0;
 	stack := make([dynamic]Stack_Value);
+
 
 	for pos < length {
 		q := actions[pos];
@@ -499,30 +537,54 @@ execute :: proc() {
 
 		switch q.action {
 			case .NUMBER: 
-				fmt.println("push number", q.value);
+				append(&stack, q.value.(f32));
 			case .UNOP: 
-				fmt.println("pop value");
-				fmt.println("push reverse");
+				poped_value := pop(&stack).(f32);
+				append(&stack, -poped_value);
 			case .BINOP:
-				fmt.println("pop b");
-				fmt.println("pop a");
-				fmt.println("execute binop");
-				fmt.println("push c");
+				b := pop(&stack);
+				a := pop(&stack);
+				op := q.value.(Op);
+
+				new_value := binop_types(a, b, op);
+
+				append(&stack, new_value);
 			case .SET_IDENT:
-				fmt.println("pop stacked value to something");
+				name := q.value.(string);
+				fmt.println("Set ", name, " = ", pop(&stack));
 			case .CALL:
-				fmt.println("pop all args");
-				fmt.println("execute");
-				fmt.println("push return");
+				name := q.value.(Action_Call).name;
+				count := q.value.(Action_Call).count;
+
+				i := count;
+
+				args := make([dynamic]Stack_Value);
+
+				i -= 1;
+				for i >= 0 {
+					append(&args, pop(&stack));
+					i -= 1;
+				}
+
+				fmt.println("Calling function ", name, " with ", args);
+
+				free(&args);
+
 			case .IDENT:
-				fmt.println("push var to stack");
+				name := q.value.(string);
+				fmt.println("Trying to get a ident ", name);
+
+				new_value: Stack_Value;
+				new_value = false;
+				append(&stack, new_value);
+
 			case .STR:
-				fmt.println("push string to stack");
+				str := q.value.(string);
+				append(&stack, str);
 			case .RET:
 				pos = length;
-				fmt.println("push string to stack");
 			case .DISCARD:
-				fmt.println("pop stack");
+				pop(&stack);
 		}
 	}
 	
@@ -531,9 +593,13 @@ execute :: proc() {
 compile :: proc() -> bool{
 	actions = make([dynamic]^IAction);
 
-	if compile_expr(build_node) do return true;
+	fmt.println("\n");
+	fmt.println(build_node.value);
+	fmt.println("\n");
+	if compile_expr(build_node) {
+		return true;
+	}
 
-	fmt.println(actions);
 
 	return false;
 }
@@ -553,10 +619,12 @@ compile_expr :: proc(q: ^INode) -> bool {
 				q.pos
 			}));
 		case .SET:
-			n1 := q.value.([2]^INode)[0];
-			n2 := q.value.([2]^INode)[1];
+			n1 := q.value.([dynamic]^INode)[0];
+			n2 := q.value.([dynamic]^INode)[1];
 
-			if compile_expr(n2) do return true;
+			if compile_expr(n2) {
+				return true;
+			}
 			_expr := n1;
 			#partial switch _expr.node {
 				case .IDENT: {
@@ -616,7 +684,8 @@ compile_expr :: proc(q: ^INode) -> bool {
 				q.pos
 			}));
 		case .BLOCK: 
-			for i in nodes {
+			block_nodes := q.value.([dynamic]^INode);
+			for i in block_nodes {
 				if compile_expr(i) do return true;
 			}
 		case .RET:
