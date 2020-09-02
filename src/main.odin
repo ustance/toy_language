@@ -8,12 +8,71 @@ import "core:unicode"
 import "core:unicode/utf8"
 import "core:strconv"
 
+Node :: enum {
+	NUMBER,
+	IDENT,
+	UNOP,
+	BINOP,
+
+	STR,
+	CALL,
+	BLOCK,
+
+	RET,
+	DISCARD,
+	SET,
+}
+
+Stack_Value :: union {
+	f32,
+	string,
+}
+
+Node_Value :: union {
+	f32,
+	string,
+	int,
+	^INode,
+	[dynamic]^INode,
+	Node_Call,
+	[2]^INode,
+	Node_Unop,
+	Node_Op,
+}
+
+Node_Unop :: struct {
+	op: Unop,
+	node: ^INode,
+}
+
+Node_Op :: struct {
+	op: Op,
+	node: ^INode,
+	node2: ^INode,
+}
+
+Node_Call :: struct {
+	name: string,
+	args: [dynamic]^INode,
+}
+
+INode :: struct {
+	node: Node,
+	value: Node_Value,
+
+	pos: int,
+}
+
 Token :: enum {
 	IDENT, //name_test
 	OP, //+ - * / > >= < <=
 	NUMBER,
 	STR,
 	UNOP, 
+
+	FN,
+	RET,
+	VAR,
 
 	CB_OPEN, //{
 	CB_CLOSE, //}
@@ -62,6 +121,36 @@ IToken :: struct {
 	pos: int,
 }
 
+Action :: enum {
+	NUMBER,
+	IDENT,
+	UNOP,
+	BINOP,
+	STR,
+	CALL,
+	RET,
+	DISCARD,
+	SET_IDENT,
+}
+
+Action_Value :: union {
+	f32,
+	string,
+	Op,
+	Action_Call,
+}
+
+Action_Call :: struct {
+	name: string,
+	count: int,
+}
+
+IAction :: struct {
+	action: Action,
+	value: Action_Value,
+	pos: int,
+}
+
 tokens: [dynamic]IToken;
 
 pack_token :: proc(t: IToken) {
@@ -72,6 +161,483 @@ pack_token :: proc(t: IToken) {
 	}
 
 	append(&tokens, t);
+}
+
+build_pos: int = 0;
+build_len: int = 0;
+build_node: ^INode;
+
+nodes: [dynamic] ^INode = make([dynamic] ^INode);
+
+build_tokens :: proc() -> bool {
+	build_pos = 0;
+	build_len = len(tokens) - 1;
+
+	temp_nodes := make([dynamic] ^INode);
+	found := 0;
+
+	for build_pos < build_len {
+		if build_stat() do return true;
+		append(&temp_nodes, build_node);
+	}
+
+	build_node = get_node({
+		.BLOCK,
+		temp_nodes,
+		0
+	});
+	
+	return false;
+}
+
+get_node :: proc(node: INode) -> ^INode{
+	new_node := new(INode);
+
+	new_node.node = node.node;
+	new_node.pos = node.pos;
+	new_node.value = node.value;
+
+	return new_node;
+}
+
+build_expr :: proc(flags: int) -> bool {
+	tk: ^IToken = &tokens[build_pos];
+	build_pos += 1;
+
+	#partial switch tk.token {
+		case .NUMBER: {
+			build_node = get_node({
+				.NUMBER,
+				tk.value.(f32),
+				tk.pos
+			});
+		}
+		case .STR: {
+			build_node = get_node({
+				.STR,
+				tk.value.(string),
+				tk.pos
+			});
+		}
+		case .PAR_OPEN: {
+			if build_expr(0) do return true;
+			tk = &tokens[build_pos];
+			build_pos += 1;
+
+			if tk.token != .PAR_CLOSE {
+				fmt.println("expected )");
+				return true;
+			}
+		}
+		case .OP: {
+			op_value := tk.value.(Op);
+			#partial switch op_value {
+				case .ADD: {
+					if build_expr(1) do return true;
+				}
+				case .SUB: {
+					if build_expr(1) do return true;
+					build_node = get_node({
+						.UNOP,
+						Node_Unop {.NEG, build_node},
+						tk.pos,
+					});
+				}
+				case:
+					fmt.println("Not implemented OP");
+					return true;
+			}
+		}
+		case .IDENT: {
+			tkn := &tokens[build_pos];
+
+			#partial switch tkn.token {
+				case .PAR_OPEN: {
+					build_pos += 1;
+
+					args := make([dynamic]^INode);
+					argc := 0;
+					closed := false;
+
+					loop: for build_pos < build_len {
+						tkn = &tokens[build_pos];
+
+						#partial switch tkn.token {
+							case .PAR_CLOSE: {
+								build_pos += 1;
+								closed = true;
+								break loop;
+							}
+						}
+
+						if build_expr(0) do return true;
+						append(&args, build_node);
+						argc += 1;
+
+						tkn = &tokens[build_pos];
+						#partial switch tkn.token {
+							case .COMMA: {
+								build_pos += 1;
+							}
+							case .PAR_CLOSE: {}
+							case: {
+								fmt.println("Expected , ) or something");
+							}
+						}
+					}
+
+					if !closed {
+						fmt.println("unclosed ()");
+						return true;
+					}
+
+					build_node = get_node({
+						.CALL,
+						Node_Call {tk.value.(string), args},
+						tk.pos
+					});
+				}
+				case: {
+					build_node = get_node({
+						.IDENT,
+						tk.value.(string),
+						tk.pos,
+					});
+				}
+			}
+		}
+	}
+
+	if (flags & 1) == 0 {
+		tk = &tokens[build_pos];
+		#partial switch tk.token {
+			case .OP: {
+				build_pos += 1;
+				if build_ops(tk) do return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+build_ops :: proc(_tk: ^IToken) -> bool {
+	temp_nodes := make([dynamic]^INode);	
+	append(&temp_nodes, build_node);
+
+	ops := make([dynamic]^IToken);
+	append(&ops, _tk);
+
+	tk: ^IToken;
+
+	for true {
+		if build_expr(1) do return true;
+
+		append(&temp_nodes, build_node);
+
+		tk = &tokens[build_pos];
+
+		to_break := false;
+
+		#partial switch tk.token {
+			case .OP: {
+				build_pos += 1;
+				append(&ops, tk);
+			}
+			case: to_break = true;
+		}
+		if to_break do break;
+	}
+
+	n := len(ops);
+	pmax := 0x50 >> 4;
+	pri := 0;
+
+	for pri < pmax {
+		i := 0;
+		for i < n {
+			tk = ops[i];
+			#partial switch tk.token {
+				case .OP: {
+					op := tk.value.(Op);
+					if (int(op) >> 4) != pri {
+						i += 1;
+						continue;
+					}
+
+					temp_nodes[i] = get_node({
+						.BINOP,
+						Node_Op {op, temp_nodes[i], temp_nodes[i + 1]},
+						tk.pos
+					});
+
+					unordered_remove(&temp_nodes, i+1);
+					unordered_remove(&ops, i);
+					n -= 1;
+					i -= 1;
+				}
+				case: {}
+			}
+			i += 1;
+		}
+		pri += 1;
+	}
+
+	build_node = temp_nodes[0];
+	return false;
+}
+
+build_stat :: proc() -> bool {
+	tk := tokens[build_pos];
+	build_pos += 1;
+	tkn: ^IToken = nil;
+	#partial switch tk.token {
+		case .RET: {
+			if build_expr(0) do return true;
+
+			build_node = get_node({
+				.RET,
+				build_node,
+				tk.pos,
+			});
+		}
+		case .CB_OPEN: {
+			temp_nodes := make([dynamic]^INode);
+			found := 0;
+			closed := false;
+
+			for build_pos < build_len {
+				tkn = &tokens[build_pos];
+
+				#partial switch tkn.token {
+					case .CB_CLOSE: {
+						build_pos += 1;
+						closed = true;
+					}
+				}
+
+				if build_stat() do return true;
+				append(&temp_nodes, build_node);
+				found += 1;
+			}
+
+			if !closed do fmt.println("Unclosed {} handle pleawse");
+
+			build_node = get_node({
+				.BLOCK,
+				temp_nodes,
+				tk.pos
+			});
+		}
+		case: {
+			build_pos -= 1;
+			if build_expr(1) do return true;
+
+			expr := build_node;
+
+			#partial switch build_node.node {
+				case .CALL: {
+					build_node = get_node({
+						.DISCARD,
+						build_node,
+						tk.pos
+					});
+				}
+				case: {
+					tkn = &tokens[build_pos];
+
+					#partial switch tkn.token {
+						case .OP: {
+							op_value := tkn.value.(Op);
+							#partial switch op_value {
+								case .SET: {
+									build_pos += 1;
+									if build_expr(0) do return true;
+
+									anodes := make([dynamic]^INode);
+									append(&anodes, expr);
+									append(&anodes, build_node);
+
+									build_node = get_node({
+										.SET,
+										anodes,
+										tk.pos
+									});
+								}
+							}
+						}
+						case: {return true;}
+					}
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+actions: [dynamic]^IAction;
+
+get_action :: proc(act: IAction) -> ^IAction {
+	a := new(IAction);
+
+	a.action = act.action;
+	a.value = act.value;
+	a.pos = act.pos;
+
+	return a;
+}
+
+execute :: proc() {
+	length := len(actions);	
+	pos := 0;
+	stack := make([dynamic]Stack_Value);
+
+	for pos < length {
+		q := actions[pos];
+		pos += 1;
+
+		switch q.action {
+			case .NUMBER: 
+				fmt.println("push number", q.value);
+			case .UNOP: 
+				fmt.println("pop value");
+				fmt.println("push reverse");
+			case .BINOP:
+				fmt.println("pop b");
+				fmt.println("pop a");
+				fmt.println("execute binop");
+				fmt.println("push c");
+			case .SET_IDENT:
+				fmt.println("pop stacked value to something");
+			case .CALL:
+				fmt.println("pop all args");
+				fmt.println("execute");
+				fmt.println("push return");
+			case .IDENT:
+				fmt.println("push var to stack");
+			case .STR:
+				fmt.println("push string to stack");
+			case .RET:
+				pos = length;
+				fmt.println("push string to stack");
+			case .DISCARD:
+				fmt.println("pop stack");
+		}
+	}
+	
+}
+
+compile :: proc() -> bool{
+	actions = make([dynamic]^IAction);
+
+	if compile_expr(build_node) do return true;
+
+	fmt.println(actions);
+
+	return false;
+}
+
+compile_expr :: proc(q: ^INode) -> bool {
+	#partial switch q.node {
+		case .NUMBER:
+			append(&actions, get_action({
+				.NUMBER,
+				q.value.(f32),
+				q.pos
+			}));
+		case .IDENT:
+			append(&actions, get_action({
+				.IDENT,
+				q.value.(string),
+				q.pos
+			}));
+		case .SET:
+			n1 := q.value.([2]^INode)[0];
+			n2 := q.value.([2]^INode)[1];
+
+			if compile_expr(n2) do return true;
+			_expr := n1;
+			#partial switch _expr.node {
+				case .IDENT: {
+					n := _expr.value.(string);
+
+					append(&actions, get_action({
+						.SET_IDENT,
+						n,
+						q.pos
+					}));
+				}
+				case : {
+					fmt.println("Expression cannot be set.");
+					return true;
+				}
+			}
+		case .UNOP: 
+			op := q.value.(Node_Unop).op;
+			n := q.value.(Node_Unop).node;
+
+			if compile_expr(n) do return true;
+
+			append(&actions, get_action({
+				.UNOP,
+				nil,
+				q.pos
+			}));
+		case .BINOP:
+			op := q.value.(Node_Op).op;
+			a := q.value.(Node_Op).node;
+			b := q.value.(Node_Op).node2;
+			
+			if compile_expr(a) do return true;
+			if compile_expr(b) do return true;
+
+			append(&actions, get_action({
+				.BINOP,
+				op,
+				q.pos
+			}));
+		case .STR: 
+			append(&actions, get_action({
+				.STR,
+				q.value.(string),
+				q.pos
+			}));
+		case .CALL: 
+			name := q.value.(Node_Call).name;
+			args := q.value.(Node_Call).args;
+			argc := len(args);
+			for i in 0..<argc {
+				if compile_expr(args[i]) do return true;
+			}
+			append(&actions, get_action({
+				.CALL,
+				Action_Call{name, argc},
+				q.pos
+			}));
+		case .BLOCK: 
+			for i in nodes {
+				if compile_expr(i) do return true;
+			}
+		case .RET:
+			n := q.value.(^INode);
+			if compile_expr(n) do return true;
+			append(&actions, get_action({
+				.RET,
+				nil,
+				q.pos
+			}));
+		case .DISCARD: 
+			n := q.value.(^INode);
+			if compile_expr(n) do return true;
+			append(&actions, get_action({
+				.DISCARD,
+				nil,
+				q.pos
+			}));
+			
+	}
+	return false;
 }
 
 main :: proc() {
@@ -253,7 +819,6 @@ main :: proc() {
 
 				if index < len(source_string) {
 					index += 1;
-					/* fmt.println(source_string[start+1:index-1]); */
 					pack_token(IToken {
 						.STR,
 						source_string[start+1:index-1],
@@ -309,11 +874,36 @@ main :: proc() {
 					}
 
 					word := source_string[start:index];
-					pack_token(IToken {
-						.IDENT,
-						word,
-						start
-					});
+					switch word {
+						case "fn": {
+							pack_token(IToken {
+								.FN,
+								nil,
+								start
+							});
+						}
+						case "var": {
+							pack_token(IToken {
+								.VAR,
+								nil,
+								start
+							});
+						}
+						case "return": {
+							pack_token(IToken {
+								.RET,
+								nil,
+								start
+							});
+						}
+						case: {
+							pack_token(IToken {
+								.IDENT,
+								word,
+								start
+							});
+						}
+					}
 				} 			
 			}
 		}
@@ -325,6 +915,10 @@ main :: proc() {
 		len(source_string) + 1
 	});
 
-	fmt.println(tokens);
+	err := build_tokens();
+
+	compile();
+
+	execute();
 
 }

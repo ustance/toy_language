@@ -1,4 +1,1 @@
-fn main() {
-	// COMMENT
-	var t = 25 + 6 / 2 * 3;
-}
+main("test", 3 + 5);
