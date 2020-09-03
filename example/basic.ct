@@ -1,4 +1,7 @@
-t = 0
-b = 0
+t = 0;
+b = "whoa";
 
-test(t, b)
+c = 25 * 4;
+d = c / 4;
+
+print(d, "d is: ");
