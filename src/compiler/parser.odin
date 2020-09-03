@@ -15,6 +15,7 @@ Node :: enum {
 	RET,
 	DISCARD,
 	SET,
+	VAR,
 }
 Unop :: enum {
 	NEG,
@@ -98,6 +99,22 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 	build_pos += 1;
 	tkn: ^IToken = nil;
 	#partial switch tk.token {
+		case .VAR: {
+			if build_stat(tokens) do return true;
+
+			stat := build_node;
+
+			if stat.node == .SET {
+				build_node = get_node({
+					.VAR,
+					stat.value.(string),
+					tk.pos,
+				});
+			} else {
+				fmt.println("Expected a set statement");	
+				return true;
+			}
+		}
 		case .RET: {
 			if build_expr(tokens, 0) {
 				return true;
@@ -266,6 +283,9 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 	build_pos += 1;
 
 	#partial switch tk.token {
+		case .VAR: {
+			fmt.println("var");
+		}
 		case .NUMBER: {
 			build_node = get_node({
 				.NUMBER,

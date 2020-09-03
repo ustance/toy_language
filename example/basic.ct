@@ -1,7 +1,3 @@
-t = 0;
-b = "whoa";
+var t = 0;
 
-c = 25 * 4;
-d = c / 4;
-
-print(d, "d is: ");
+print(t, "t is: ");

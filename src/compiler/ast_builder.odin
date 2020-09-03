@@ -77,6 +77,9 @@ compile_expr :: proc(q: ^INode) -> bool {
 				q.value.(string),
 				q.pos
 			}));
+		case .VAR: 
+			n1 := q.value.(string);
+			fmt.println(n1);
 		case .SET:
 			n1 := q.value.([dynamic]^INode)[0];
 			n2 := q.value.([dynamic]^INode)[1];

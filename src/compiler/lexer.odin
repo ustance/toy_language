@@ -62,7 +62,7 @@ IToken :: struct {
 	pos: int,
 }
 
-DEBUG :: false;
+DEBUG :: true;
 
 lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 
