@@ -16,6 +16,7 @@ Node :: enum {
 	DISCARD,
 	SET,
 	VAR,
+	VAR_EMPTY,
 }
 Unop :: enum {
 	NEG,
@@ -50,12 +51,11 @@ Node_Call :: struct {
 }
 
 INode :: struct {
-	node: Node,
+	node: Node, //typeof Node
 	value: Node_Value,
 
 	pos: int,
 }
-
 
 build_pos: int = 0;
 build_len: int = 0;
@@ -84,6 +84,14 @@ build_tokens :: proc(tokens: ^[dynamic] IToken) -> (^INode, bool) {
 	return build_node, false;
 }
 
+create_node :: proc(node: Node, $T: typeid) -> ^T {
+	new_node := new(T);
+
+	new_node.node = node;
+	
+	return new_node;
+}
+
 get_node :: proc(node: INode) -> ^INode{
 	new_node := new(INode);
 
@@ -94,25 +102,55 @@ get_node :: proc(node: INode) -> ^INode{
 	return new_node;
 }
 
+peek_next :: proc(tokens: ^[dynamic]IToken) -> ^IToken {
+	if build_pos >= build_len {
+		return nil;
+	} 
+
+	return &tokens[build_pos+1];
+}
+
 build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 	tk := &tokens[build_pos];
 	build_pos += 1;
 	tkn: ^IToken = nil;
 	#partial switch tk.token {
 		case .VAR: {
-			if build_stat(tokens) do return true;
+			next_tkn := peek_next(tokens);
+			if next_tkn == nil {
+				fmt.println("EOF");
+				return true;
+			}
+			if next_tkn.token == .SEMICOLON {
+				if build_expr(tokens, 0) {
+					return true;
+				}
 
-			stat := build_node;
+				ident := build_node;
 
-			if stat.node == .SET {
 				build_node = get_node({
-					.VAR,
-					stat.value.(string),
+					.VAR_EMPTY,
+					ident,
 					tk.pos,
 				});
+				build_pos += 1;
 			} else {
-				fmt.println("Expected a set statement");	
-				return true;
+				if build_stat(tokens) {
+					return true;
+				}
+
+				stat := build_node;
+
+				if stat.node == .SET {
+					build_node = get_node({
+						.VAR,
+						stat.value,
+						tk.pos,
+					});
+				} else {
+					fmt.println("Expected a set statement");	
+					return true;
+				}
 			}
 		}
 		case .RET: {
@@ -283,9 +321,6 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 	build_pos += 1;
 
 	#partial switch tk.token {
-		case .VAR: {
-			fmt.println("var");
-		}
 		case .NUMBER: {
 			build_node = get_node({
 				.NUMBER,

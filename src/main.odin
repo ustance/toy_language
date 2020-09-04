@@ -42,9 +42,11 @@ main :: proc() {
 	err: bool;
 	build_node, err = compiler.build_tokens(&tokens);
 
-	err2: bool;
-	actions, err2 = compiler.compile(build_node);
+	fmt.println(build_node);
 
-	vm.execute(actions);
+	/* err2: bool; */
+	/* actions, err2 = compiler.compile(build_node); */
+
+	/* vm.execute(actions); */
 
 }

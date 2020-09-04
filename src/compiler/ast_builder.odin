@@ -19,6 +19,8 @@ Action :: enum {
 	RET,
 	DISCARD,
 	SET_IDENT,
+	VAR_IDENT,
+	VAR_EMPTY,
 }
 
 Action_Value :: union {
@@ -77,9 +79,38 @@ compile_expr :: proc(q: ^INode) -> bool {
 				q.value.(string),
 				q.pos
 			}));
+		case .VAR_EMPTY: 
+			n := q.value.(^INode).value.(string);
+
+			append(&actions, get_action({
+				.VAR_EMPTY,
+				n,
+				q.pos
+			}));
+
 		case .VAR: 
-			n1 := q.value.(string);
-			fmt.println(n1);
+			n1 := q.value.([dynamic]^INode)[0];
+			n2 := q.value.([dynamic]^INode)[1];
+
+			if compile_expr(n2) {
+				return true;
+			}
+			_expr := n1;
+			#partial switch _expr.node {
+				case .IDENT: {
+					n := _expr.value.(string);
+
+					append(&actions, get_action({
+						.VAR_IDENT,
+						n,
+						q.pos
+					}));
+				}
+				case : {
+					fmt.println("Expression cannot be set.");
+					return true;
+				}
+			}
 		case .SET:
 			n1 := q.value.([dynamic]^INode)[0];
 			n2 := q.value.([dynamic]^INode)[1];

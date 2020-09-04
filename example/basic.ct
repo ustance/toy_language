@@ -1,3 +1,2 @@
-var t = 0;
-
-print(t, "t is: ");
+var t = 25;
+trace("t is: ", t);

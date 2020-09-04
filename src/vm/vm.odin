@@ -68,7 +68,7 @@ execute :: proc(actions: [dynamic]^IAction) {
 	basic_variables := make(map[string]Stack_Value);
 	basic_funcs := make(map[string] proc(argc: int));
 
-	basic_funcs["print"] = proc(argc: int) {
+	basic_funcs["trace"] = proc(argc: int) {
 		args := make([dynamic]Stack_Value);
 		i := argc;
 		i -= 1;
@@ -77,8 +77,14 @@ execute :: proc(actions: [dynamic]^IAction) {
 			i -= 1;
 		}
 
-		for arg in args {
-			fmt.println(arg);
+		for j in 0..<len(args) {
+			jj := (len(args)-1) - j;
+
+			if jj == 0 {
+				fmt.println(args[jj]);
+			} else {
+				fmt.print(args[jj]);
+			}
 		}
 
 		delete(args);
@@ -105,35 +111,33 @@ execute :: proc(actions: [dynamic]^IAction) {
 				append(&stack, new_value);
 			case .SET_IDENT:
 				name := q.value.(string);
+				if basic_variables[name] == nil {
+					fmt.println("trying to set undefined variable", name);
+					return;
+				} else {
+					value := pop(&stack);
+					basic_variables[name] = value;
+				}
+			case .VAR_EMPTY:
+				name := q.value.(string);
+				basic_variables[name] = 0;
+			case .VAR_IDENT:
+				name := q.value.(string);
 				value := pop(&stack);
-				//fmt.println("Set ", name, " = ", pop(&stack));
 				basic_variables[name] = value;
 			case .CALL:
 				name := q.value.(Action_Call).name;
 				count := q.value.(Action_Call).count;
-
-				/* i := count; */
-
-				/* args := make([dynamic]Stack_Value); */
-
-				/* i -= 1; */
-				/* for i >= 0 { */
-				/* 	append(&args, pop(&stack)); */
-				/* 	i -= 1; */
-				/* } */
-
-				/* fmt.println("Calling function ", name, " with ", args); */
 				basic_funcs[name](count);
 
 			case .IDENT:
 				name := q.value.(string);
 
-				new_value: Stack_Value;
-				new_value = false;
 				if basic_variables[name] != nil {
 					append(&stack, basic_variables[name]);
 				} else {
-					append(&stack, new_value);
+					fmt.println("trying to access not defined variable", name);
+					return;
 				}
 
 			case .STR:
