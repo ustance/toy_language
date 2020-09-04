@@ -59,7 +59,12 @@ IToken :: struct {
 	token: Token,
 	value: Token_Value, 
 
-	pos: int,
+	pos: Line_Info,
+}
+
+Line_Info :: struct {
+	pos: i32,
+	line: i32,
 }
 
 DEBUG :: false;
@@ -80,34 +85,42 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 		append(tokens, t);
 	}
 
+	current_pos: i32 = 0;
+	current_line: i32 = 0;
+
 	index := 0;
 	for index < len(source_string) {
 		start := index;
 		r := utf8.rune_at_pos(source_string, index);
 
 		index += 1;
+		defer current_pos += 1;
 
 		switch r {
-			case ' ', '\r', '\n': {
+			case ' ', '\r': {}
 
+			case '\n': {
+				current_pos = -1;
+				current_line += 1;
 			}
+
 			case '+':
 				pack_token(IToken {
 					.OP,
 					.ADD,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			case '-':
 				pack_token(IToken {
 					.OP,
 					.SUB,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			case '*':
 				pack_token(IToken {
 					.OP,
 					.MUL,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			case '!': 
 				new_r := utf8.rune_at_pos(source_string, index);
@@ -116,7 +129,7 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 					pack_token(IToken {
 						.OP,
 						.NE,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				}
 			case '>': 
@@ -126,13 +139,13 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 					pack_token(IToken {
 						.OP,
 						.GE,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				} else {
 					pack_token(IToken {
 						.OP,
 						.GT,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				}
 			case '<': 
@@ -142,13 +155,13 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 					pack_token(IToken {
 						.OP,
 						.LE,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				} else {
 					pack_token(IToken {
 						.OP,
 						.LT,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				}
 			case '=':
@@ -158,13 +171,13 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 					pack_token(IToken {
 						.OP,
 						.EQ,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				} else {
 					pack_token(IToken {
 						.OP,
 						.SET,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				}
 
@@ -180,7 +193,7 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 					pack_token(IToken {
 						.OP,
 						.FDIV,
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				}
 			}
@@ -188,42 +201,42 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 				pack_token(IToken {
 					.PAR_OPEN,
 					nil,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			}
 			case ')': {
 				pack_token(IToken {
 					.PAR_CLOSE,
 					nil,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			}
 			case '{': {
 				pack_token(IToken {
 					.CB_OPEN,
 					nil,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			}
 			case '}': {
 				pack_token(IToken {
 					.CB_CLOSE,
 					nil,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			}
 			case ',': {
 				pack_token(IToken {
 					.COMMA,
 					nil,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			}
 			case ':': {
 				pack_token(IToken {
 					.COLON,
 					nil,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			}
 			case '\"': {
@@ -242,7 +255,7 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 					pack_token(IToken {
 						.STR,
 						source_string[start+1:index-1],
-						start
+						{current_pos, current_line}
 					}, &tokens);
 				} else {
 					fmt.println("Unclosed string.");
@@ -252,7 +265,7 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 				pack_token(IToken {
 					.SEMICOLON,
 					nil,
-					start
+					{current_pos, current_line}
 				}, &tokens);
 			}
 
@@ -279,7 +292,7 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 						pack_token(IToken {
 							.NUMBER,
 							float_number,
-							start
+							{current_pos, current_line}
 						}, &tokens);
 					}
 				} else if r == '_'  || ((i32(r) >= i32('a') && i32(r) <= i32('z')) || (i32(r) >= i32('A') && i32(r) <= i32('Z'))){
@@ -299,28 +312,28 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 							pack_token(IToken {
 								.FN,
 								nil,
-								start
+								{current_pos, current_line}
 							}, &tokens);
 						}
 						case "var": {
 							pack_token(IToken {
 								.VAR,
 								nil,
-								start
+								{current_pos, current_line}
 							}, &tokens);
 						}
 						case "return": {
 							pack_token(IToken {
 								.RET,
 								nil,
-								start
+								{current_pos, current_line}
 							}, &tokens);
 						}
 						case: {
 							pack_token(IToken {
 								.IDENT,
 								word,
-								start
+								{current_pos, current_line}
 							}, &tokens);
 						}
 					}
@@ -332,7 +345,7 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 	pack_token(IToken {
 		.EOF,
 		nil,
-		len(source_string) + 1
+		{i32(len(source_string)+1), current_line+1}
 	}, &tokens);
 
 	return;

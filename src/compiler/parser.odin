@@ -23,38 +23,58 @@ Unop :: enum {
 }
 
 Node_Value :: union {
-	f32,
-	string,
-	int,
-	^INode,
-	[dynamic]^INode,
-	Node_Call,
-	[2]^INode,
+	Node_Number,
+	Node_Str,
+	Node_Ident,
 	Node_Unop,
 	Node_Op,
+	Node_Call,
+	Node_Block,
+	Node_Set,
+	Node_Var,
+	Node_Var_Empty,
+	/* f32, */
+	/* string, */
+	/* int, */
+	/* ^INode, */
+	/* [dynamic]^INode, */
+	/* Node_Call, */
+	/* [2]^INode, */
+	/* Node_Unop, */
+	/* Node_Op, */
 }
 
+
+Node_Number :: distinct f32;
+Node_Ident :: struct {
+	name: string,
+}
 Node_Unop :: struct {
 	op: Unop,
 	node: ^INode,
 }
-
 Node_Op :: struct {
 	op: Op,
 	node: ^INode,
 	node2: ^INode,
 }
-
+Node_Str :: string;
 Node_Call :: struct {
 	name: string,
 	args: [dynamic]^INode,
 }
+Node_Block :: [dynamic]^INode;
+//RET
+//DISCARd
+Node_Set :: distinct [2]^INode;
+Node_Var :: distinct [2]^INode;
+Node_Var_Empty :: distinct ^INode;
 
 INode :: struct {
-	node: Node, //typeof Node
 	value: Node_Value,
 
-	pos: int,
+	kind: Node, 
+	pos: Line_Info,
 }
 
 build_pos: int = 0;
@@ -77,8 +97,8 @@ build_tokens :: proc(tokens: ^[dynamic] IToken) -> (^INode, bool) {
 
 	build_node = get_node({
 		.BLOCK,
-		temp_nodes,
-		0
+		Block_Node {temp_nodes},
+		{0,0}
 	});
 
 	return build_node, false;
@@ -226,9 +246,10 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 										build_pos += 1;
 									}
 
-									anodes := make([dynamic]^INode);
-									append(&anodes, expr);
-									append(&anodes, build_node);
+									anodes: [2]^INode = {
+										expr,
+										build_node
+									};
 
 									build_node = get_node({
 										.SET,

@@ -38,7 +38,7 @@ Action_Call :: struct {
 IAction :: struct {
 	action: Action,
 	value: Action_Value,
-	pos: int,
+	pos: Line_Info,
 }
 
 get_action :: proc(act: IAction) -> ^IAction {
@@ -66,21 +66,21 @@ compile :: proc(build_node: ^INode) -> ([dynamic]^IAction, bool) {
 }
 
 compile_expr :: proc(q: ^INode) -> bool {
-	#partial switch q.node {
+	#partial switch q.kind {
 		case .NUMBER:
 			append(&actions, get_action({
 				.NUMBER,
-				q.value.(f32),
+				q.value.(Node_Number),
 				q.pos
 			}));
 		case .IDENT:
 			append(&actions, get_action({
 				.IDENT,
-				q.value.(string),
+				q.value.(Node_Ident),
 				q.pos
 			}));
 		case .VAR_EMPTY: 
-			n := q.value.(^INode).value.(string);
+			n := q.value.(^INode).value.(Node_Str);
 
 			append(&actions, get_action({
 				.VAR_EMPTY,
@@ -96,7 +96,7 @@ compile_expr :: proc(q: ^INode) -> bool {
 				return true;
 			}
 			_expr := n1;
-			#partial switch _expr.node {
+			#partial switch _expr.kind {
 				case .IDENT: {
 					n := _expr.value.(string);
 
@@ -119,7 +119,7 @@ compile_expr :: proc(q: ^INode) -> bool {
 				return true;
 			}
 			_expr := n1;
-			#partial switch _expr.node {
+			#partial switch _expr.kind {
 				case .IDENT: {
 					n := _expr.value.(string);
 
@@ -136,7 +136,7 @@ compile_expr :: proc(q: ^INode) -> bool {
 			}
 		case .UNOP: 
 			op := q.value.(Node_Unop).op;
-			n := q.value.(Node_Unop).node;
+			n := q.value.(Node_Unop).kind;
 
 			if compile_expr(n) do return true;
 
