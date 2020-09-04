@@ -39,30 +39,28 @@ Node_Value :: union {
 
 
 Node_Discard :: distinct ^INode;
-Node_Ret :: distinct ^INode;
-Node_Number :: distinct f32;
-Node_Ident :: struct {
+Node_Ret     :: distinct ^INode;
+Node_Number  :: distinct f32;
+Node_Ident   :: struct {
 	name: string,
 }
 Node_Unop :: struct {
 	op: Unop,
 	node: ^INode,
 }
-Node_Op :: struct {
+Node_Op   :: struct {
 	op: Op,
 	node: ^INode,
 	node2: ^INode,
 }
-Node_Str :: string;
+Node_Str  :: string;
 Node_Call :: struct {
 	name: string,
 	args: [dynamic]^INode,
 }
-Node_Block :: distinct [dynamic]^INode;
-//RET
-//DISCARd
-Node_Set :: distinct [2]^INode;
-Node_Var :: distinct [2]^INode;
+Node_Block	   :: distinct [dynamic]^INode;
+Node_Set       :: distinct [2]^INode;
+Node_Var       :: distinct [2]^INode;
 Node_Var_Empty :: distinct ^INode;
 
 INode :: struct {
@@ -149,7 +147,6 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 					return true;
 				}
 
-
 				if build_node.kind == .SET {
 					stat: Node_Var;
 					stat = (Node_Var)(([2]^INode)(build_node.value.(Node_Set)));
@@ -221,6 +218,13 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 					discard_node: Node_Discard;
 					discard_node = (Node_Discard)(build_node);
 
+					if tokens[build_pos].token != .SEMICOLON {
+						fmt.println("Missing semicolon after call");
+						return true;
+					}
+
+					build_pos += 1;
+
 					build_node = get_node({
 						.DISCARD,
 						discard_node,
@@ -240,12 +244,7 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 										return true;
 									}
 
-									if tokens[build_pos].token != .SEMICOLON {
-										fmt.println("missing semicolon after set");
-										return true;
-									} else {
-										build_pos += 1;
-									}
+									build_pos += 1;
 
 									anodes: Node_Set = {
 										expr,
@@ -333,7 +332,6 @@ build_ops :: proc(tokens: ^[dynamic]IToken, _tk: ^IToken) -> bool {
 		}
 		pri += 1;
 	}
-
 	build_node = temp_nodes[0];
 	return false;
 }
@@ -430,13 +428,11 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 						fmt.println("unclosed ()");
 						return true;
 					}
-
 					if tokens[build_pos].token != .SEMICOLON {
-						fmt.println("missing semicolon after function call");
+						fmt.println("Missing semicolon after call");
 						return true;
-					} else {
-						build_pos += 1;
 					}
+
 
 					build_node = get_node({
 						.CALL,

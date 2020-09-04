@@ -1,2 +1,5 @@
-var t = 25;
-trace("t is: ", t);
+var a = trace();
+var b;
+trace(a);
+trace("help");
+trace(b);

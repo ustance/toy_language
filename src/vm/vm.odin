@@ -68,6 +68,8 @@ execute :: proc(actions: [dynamic]^IAction) {
 	basic_variables := make(map[string]Stack_Value);
 	basic_funcs := make(map[string] proc(argc: int));
 
+	fmt.println("executing");
+
 	basic_funcs["trace"] = proc(argc: int) {
 		args := make([dynamic]Stack_Value);
 		i := argc;
@@ -88,6 +90,12 @@ execute :: proc(actions: [dynamic]^IAction) {
 		}
 
 		delete(args);
+
+		if argc == 0 {
+			sv: Stack_Value;
+			sv = (f32)(14.88);
+			append(&stack, sv);
+		}
 	};
 
 

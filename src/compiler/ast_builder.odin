@@ -61,11 +61,13 @@ compile :: proc(build_node: ^INode) -> ([dynamic]^IAction, bool) {
 		return nil, true;
 	}
 
-
 	return actions, false;
 }
 
 compile_expr :: proc(q: ^INode) -> bool {
+	if q == nil {
+		fmt.println("expression is nil");
+	}
 	#partial switch q.kind {
 		case .NUMBER:
 			append(&actions, get_action({
@@ -80,11 +82,11 @@ compile_expr :: proc(q: ^INode) -> bool {
 				q.pos
 			}));
 		case .VAR_EMPTY: 
-			n := (^INode)(q.value.(Node_Var_Empty)).value.(Node_Str);
+			ident := (^INode)(q.value.(Node_Var_Empty)).value.(Node_Ident);
 
 			append(&actions, get_action({
 				.VAR_EMPTY,
-				n,
+				ident.name,
 				q.pos
 			}));
 
@@ -113,11 +115,12 @@ compile_expr :: proc(q: ^INode) -> bool {
 				}
 			}
 		case .SET:
-			nodes_array := ([2]^INode)(q.value.(Node_Var));
+			nodes_array := ([2]^INode)(q.value.(Node_Set));
 			n1 := nodes_array[0];
 			n2 := nodes_array[1];
 
 			if compile_expr(n2) {
+				fmt.println("set err");
 				return true;
 			}
 			_expr := n1;
@@ -152,8 +155,14 @@ compile_expr :: proc(q: ^INode) -> bool {
 			a := q.value.(Node_Op).node;
 			b := q.value.(Node_Op).node2;
 			
-			if compile_expr(a) do return true;
-			if compile_expr(b) do return true;
+			if compile_expr(a) {
+				fmt.println("a");
+				return true;
+			}
+			if compile_expr(b) { 
+				fmt.println("b");
+				return true;
+			}
 
 			append(&actions, get_action({
 				.BINOP,
@@ -171,7 +180,10 @@ compile_expr :: proc(q: ^INode) -> bool {
 			args := q.value.(Node_Call).args;
 			argc := len(args);
 			for i in 0..<argc {
-				if compile_expr(args[i]) do return true;
+				if compile_expr(args[i]) {
+					fmt.println("error while compiling call arg");
+					return true;
+				}
 			}
 			append(&actions, get_action({
 				.CALL,
@@ -185,7 +197,10 @@ compile_expr :: proc(q: ^INode) -> bool {
 			}
 		case .RET:
 			n := (^INode)(q.value.(Node_Ret));
-			if compile_expr(n) do return true;
+			if compile_expr(n) { 
+				fmt.println("w");
+				return true;
+			}
 			append(&actions, get_action({
 				.RET,
 				nil,
@@ -193,7 +208,10 @@ compile_expr :: proc(q: ^INode) -> bool {
 			}));
 		case .DISCARD: 
 			n := (^INode)(q.value.(Node_Discard));
-			if compile_expr(n) do return true;
+			if compile_expr(n) { 
+				fmt.println("discard");
+				return true;
+			}
 			append(&actions, get_action({
 				.DISCARD,
 				nil,

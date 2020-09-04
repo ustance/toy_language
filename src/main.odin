@@ -42,8 +42,6 @@ main :: proc() {
 	err: bool;
 	build_node, err = compiler.build_tokens(&tokens);
 
-	fmt.println(build_node.value);
-
 	err2: bool;
 	actions, err2 = compiler.compile(build_node);
 
