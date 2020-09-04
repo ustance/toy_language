@@ -44,9 +44,9 @@ main :: proc() {
 
 	fmt.println(build_node.value);
 
-	/* err2: bool; */
-	/* actions, err2 = compiler.compile(build_node); */
+	err2: bool;
+	actions, err2 = compiler.compile(build_node);
 
-	/* vm.execute(actions); */
+	vm.execute(actions);
 
 }

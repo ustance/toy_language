@@ -33,18 +33,13 @@ Node_Value :: union {
 	Node_Set,
 	Node_Var,
 	Node_Var_Empty,
-	/* f32, */
-	/* string, */
-	/* int, */
-	/* ^INode, */
-	/* [dynamic]^INode, */
-	/* Node_Call, */
-	/* [2]^INode, */
-	/* Node_Unop, */
-	/* Node_Op, */
+	Node_Ret,
+	Node_Discard,
 }
 
 
+Node_Discard :: distinct ^INode;
+Node_Ret :: distinct ^INode;
 Node_Number :: distinct f32;
 Node_Ident :: struct {
 	name: string,
@@ -63,7 +58,7 @@ Node_Call :: struct {
 	name: string,
 	args: [dynamic]^INode,
 }
-Node_Block :: [dynamic]^INode;
+Node_Block :: distinct [dynamic]^INode;
 //RET
 //DISCARd
 Node_Set :: distinct [2]^INode;
@@ -71,9 +66,8 @@ Node_Var :: distinct [2]^INode;
 Node_Var_Empty :: distinct ^INode;
 
 INode :: struct {
-	value: Node_Value,
-
 	kind: Node, 
+	value: Node_Value,
 	pos: Line_Info,
 }
 
@@ -95,27 +89,22 @@ build_tokens :: proc(tokens: ^[dynamic] IToken) -> (^INode, bool) {
 		append(&temp_nodes, build_node);
 	}
 
+	block_node: Node_Block;
+	block_node = (Node_Block)(temp_nodes);
+
 	build_node = get_node({
 		.BLOCK,
-		Block_Node {temp_nodes},
+		block_node,
 		{0,0}
 	});
 
 	return build_node, false;
 }
 
-create_node :: proc(node: Node, $T: typeid) -> ^T {
-	new_node := new(T);
-
-	new_node.node = node;
-	
-	return new_node;
-}
-
 get_node :: proc(node: INode) -> ^INode{
 	new_node := new(INode);
 
-	new_node.node = node.node;
+	new_node.kind = node.kind;
 	new_node.pos = node.pos;
 	new_node.value = node.value;
 
@@ -146,7 +135,8 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 					return true;
 				}
 
-				ident := build_node;
+				ident: Node_Var_Empty;
+				ident = (Node_Var_Empty) (build_node);
 
 				build_node = get_node({
 					.VAR_EMPTY,
@@ -159,12 +149,14 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 					return true;
 				}
 
-				stat := build_node;
 
-				if stat.node == .SET {
+				if build_node.kind == .SET {
+					stat: Node_Var;
+					stat = (Node_Var)(([2]^INode)(build_node.value.(Node_Set)));
+
 					build_node = get_node({
 						.VAR,
-						stat.value,
+						stat,
 						tk.pos,
 					});
 				} else {
@@ -178,9 +170,12 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 				return true;
 			}
 
+			ret_node: Node_Ret;
+			ret_node = (Node_Ret)(build_node);
+
 			build_node = get_node({
 				.RET,
-				build_node,
+				ret_node,
 				tk.pos,
 			});
 		}
@@ -206,9 +201,12 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 
 			if !closed do fmt.println("Unclosed {} handle pleawse");
 
+			block_nodes: Node_Block;
+			block_nodes = (Node_Block)(temp_nodes);
+
 			build_node = get_node({
 				.BLOCK,
-				temp_nodes,
+				block_nodes,
 				tk.pos
 			});
 		}
@@ -218,11 +216,14 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 
 			expr := build_node;
 
-			#partial switch build_node.node {
+			#partial switch build_node.kind {
 				case .CALL: {
+					discard_node: Node_Discard;
+					discard_node = (Node_Discard)(build_node);
+
 					build_node = get_node({
 						.DISCARD,
-						build_node,
+						discard_node,
 						tk.pos
 					});
 				}
@@ -246,7 +247,7 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 										build_pos += 1;
 									}
 
-									anodes: [2]^INode = {
+									anodes: Node_Set = {
 										expr,
 										build_node
 									};
@@ -343,9 +344,11 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 
 	#partial switch tk.token {
 		case .NUMBER: {
+			number_node: Node_Number;
+			number_node = (Node_Number)(tk.value.(f32));
 			build_node = get_node({
 				.NUMBER,
-				tk.value.(f32),
+				number_node,
 				tk.pos
 			});
 		}
@@ -442,9 +445,14 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 					});
 				}
 				case: {
+
+					ident_node: Node_Ident;
+					ident_node = {
+						tk.value.(string)
+					};
 					build_node = get_node({
 						.IDENT,
-						tk.value.(string),
+						ident_node,
 						tk.pos,
 					});
 				}

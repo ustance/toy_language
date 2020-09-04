@@ -70,17 +70,17 @@ compile_expr :: proc(q: ^INode) -> bool {
 		case .NUMBER:
 			append(&actions, get_action({
 				.NUMBER,
-				q.value.(Node_Number),
+				f32(q.value.(Node_Number)),
 				q.pos
 			}));
 		case .IDENT:
 			append(&actions, get_action({
 				.IDENT,
-				q.value.(Node_Ident),
+				q.value.(Node_Ident).name,
 				q.pos
 			}));
 		case .VAR_EMPTY: 
-			n := q.value.(^INode).value.(Node_Str);
+			n := (^INode)(q.value.(Node_Var_Empty)).value.(Node_Str);
 
 			append(&actions, get_action({
 				.VAR_EMPTY,
@@ -89,8 +89,9 @@ compile_expr :: proc(q: ^INode) -> bool {
 			}));
 
 		case .VAR: 
-			n1 := q.value.([dynamic]^INode)[0];
-			n2 := q.value.([dynamic]^INode)[1];
+			nodes_array := ([2]^INode)(q.value.(Node_Var));
+			n1 := nodes_array[0];
+			n2 := nodes_array[1];
 
 			if compile_expr(n2) {
 				return true;
@@ -98,7 +99,7 @@ compile_expr :: proc(q: ^INode) -> bool {
 			_expr := n1;
 			#partial switch _expr.kind {
 				case .IDENT: {
-					n := _expr.value.(string);
+					n := _expr.value.(Node_Ident).name;
 
 					append(&actions, get_action({
 						.VAR_IDENT,
@@ -112,8 +113,9 @@ compile_expr :: proc(q: ^INode) -> bool {
 				}
 			}
 		case .SET:
-			n1 := q.value.([dynamic]^INode)[0];
-			n2 := q.value.([dynamic]^INode)[1];
+			nodes_array := ([2]^INode)(q.value.(Node_Var));
+			n1 := nodes_array[0];
+			n2 := nodes_array[1];
 
 			if compile_expr(n2) {
 				return true;
@@ -121,7 +123,7 @@ compile_expr :: proc(q: ^INode) -> bool {
 			_expr := n1;
 			#partial switch _expr.kind {
 				case .IDENT: {
-					n := _expr.value.(string);
+					n := _expr.value.(Node_Ident).name;
 
 					append(&actions, get_action({
 						.SET_IDENT,
@@ -136,7 +138,7 @@ compile_expr :: proc(q: ^INode) -> bool {
 			}
 		case .UNOP: 
 			op := q.value.(Node_Unop).op;
-			n := q.value.(Node_Unop).kind;
+			n := q.value.(Node_Unop).node;
 
 			if compile_expr(n) do return true;
 
@@ -177,12 +179,12 @@ compile_expr :: proc(q: ^INode) -> bool {
 				q.pos
 			}));
 		case .BLOCK: 
-			block_nodes := q.value.([dynamic]^INode);
+			block_nodes := ([dynamic]^INode)(q.value.(Node_Block));
 			for i in block_nodes {
 				if compile_expr(i) do return true;
 			}
 		case .RET:
-			n := q.value.(^INode);
+			n := (^INode)(q.value.(Node_Ret));
 			if compile_expr(n) do return true;
 			append(&actions, get_action({
 				.RET,
@@ -190,7 +192,7 @@ compile_expr :: proc(q: ^INode) -> bool {
 				q.pos
 			}));
 		case .DISCARD: 
-			n := q.value.(^INode);
+			n := (^INode)(q.value.(Node_Discard));
 			if compile_expr(n) do return true;
 			append(&actions, get_action({
 				.DISCARD,
