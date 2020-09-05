@@ -37,13 +37,20 @@ main :: proc() {
 	fmt.println("\nbasic.ct:\n");
 	fmt.println(source_string);
 
-	tokens = compiler.lex_things(source_string);
+	lex_err: bool;
+	tokens, lex_err = compiler.lex_things(source_string);
 
-	err: bool;
-	build_node, err = compiler.build_tokens(&tokens);
+	if lex_err do return;
 
-	err2: bool;
-	actions, err2 = compiler.compile(build_node);
+	parser_err: bool;
+	build_node, parser_err = compiler.build_tokens(&tokens);
+
+	if parser_err do return;
+
+	ast_error: bool;
+	actions, ast_error = compiler.compile(build_node);
+
+	if ast_error do return;
 
 	vm.execute(actions);
 

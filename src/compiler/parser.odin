@@ -109,12 +109,20 @@ get_node :: proc(node: INode) -> ^INode{
 	return new_node;
 }
 
-peek_next :: proc(tokens: ^[dynamic]IToken) -> ^IToken {
-	if build_pos >= build_len {
+peek :: proc(tokens: ^[dynamic]IToken, f: int) -> ^IToken {
+	if build_pos+f > build_len {
 		return nil;
-	} 
+	}
 
-	return &tokens[build_pos+1];
+	return &tokens[build_pos+f];
+}
+
+parser_error :: proc(msg: string, pos: Line_Info, args: ..any) -> bool {
+	message := fmt.tprint("Parser Error[", pos.line, "]: ", msg);
+
+	fmt.println(message);
+
+	return true;
 }
 
 build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
@@ -123,44 +131,62 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 	tkn: ^IToken = nil;
 	#partial switch tk.token {
 		case .VAR: {
-			next_tkn := peek_next(tokens);
-			if next_tkn == nil {
-				fmt.println("EOF");
-				return true;
+			
+			next_tkn := peek(tokens, 0);
+
+			#partial switch next_tkn.token {
+				case .EOF: {
+					return parser_error("unexpected EOF", next_tkn.pos);
+				}
+
+				case .IDENT: {
+					after_ident := peek(tokens, 1);
+
+					#partial switch after_ident.token {
+						case .SEMICOLON: {
+							if build_expr(tokens, 0) {
+								return true;
+							}
+
+							ident: Node_Var_Empty;
+							ident = (Node_Var_Empty) (build_node);
+
+							build_node = get_node({
+								.VAR_EMPTY,
+								ident,
+								tk.pos,
+							});
+							build_pos += 1;
+						}
+						case .OP: {
+							if build_stat(tokens) {
+								return true;
+							}
+
+							if build_node.kind == .SET {
+								stat: Node_Var;
+								stat = (Node_Var)(([2]^INode)(build_node.value.(Node_Set)));
+
+								build_node = get_node({
+									.VAR,
+									stat,
+									tk.pos,
+								});
+							} else {
+								return parser_error("Expected a set statement", tkn.pos);
+							}
+						}
+						case: {
+							return parser_error("Expected a set statement", tkn.pos);
+						}
+					}
+				}
+
+				case: {
+					return parser_error("error in var statement", next_tkn.pos);
+				}
 			}
-			if next_tkn.token == .SEMICOLON {
-				if build_expr(tokens, 0) {
-					return true;
-				}
 
-				ident: Node_Var_Empty;
-				ident = (Node_Var_Empty) (build_node);
-
-				build_node = get_node({
-					.VAR_EMPTY,
-					ident,
-					tk.pos,
-				});
-				build_pos += 1;
-			} else {
-				if build_stat(tokens) {
-					return true;
-				}
-
-				if build_node.kind == .SET {
-					stat: Node_Var;
-					stat = (Node_Var)(([2]^INode)(build_node.value.(Node_Set)));
-
-					build_node = get_node({
-						.VAR,
-						stat,
-						tk.pos,
-					});
-				} else {
-					fmt.println("Expected a set statement");	
-					return true;
-				}
-			}
 		}
 		case .RET: {
 			if build_expr(tokens, 0) {
@@ -196,7 +222,7 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 				found += 1;
 			}
 
-			if !closed do fmt.println("Unclosed {} handle pleawse");
+			if !closed do return parser_error("Unclosed {}", tkn.pos);
 
 			block_nodes: Node_Block;
 			block_nodes = (Node_Block)(temp_nodes);
@@ -219,8 +245,7 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 					discard_node = (Node_Discard)(build_node);
 
 					if tokens[build_pos].token != .SEMICOLON {
-						fmt.println("Missing semicolon after call");
-						return true;
+						return parser_error("Missing semicolon after call", tkn.pos);
 					}
 
 					build_pos += 1;
@@ -239,9 +264,15 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 							op_value := tkn.value.(Op);
 							#partial switch op_value {
 								case .SET: {
+
 									build_pos += 1;
 									if build_expr(tokens, 0) {
-										return true;
+										return parser_error("building set expressiong", tkn.pos);
+									}
+
+									next_tkn := peek(tokens, 0);
+									if next_tkn.token != .SEMICOLON {
+										return parser_error("missing ;", next_tkn.pos);
 									}
 
 									build_pos += 1;
@@ -341,6 +372,9 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 	build_pos += 1;
 
 	#partial switch tk.token {
+		case .SEMICOLON: {
+			parser_error("Unexpected semicolon", tk.pos);
+		}
 		case .NUMBER: {
 			number_node: Node_Number;
 			number_node = (Node_Number)(tk.value.(f32));
@@ -363,8 +397,7 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 			build_pos += 1;
 
 			if tk.token != .PAR_CLOSE {
-				fmt.println("expected )");
-				return true;
+				return parser_error("expected )", tk.pos);
 			}
 		}
 		case .OP: {
@@ -382,8 +415,7 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 					});
 				}
 				case:
-					fmt.println("Not implemented OP");
-					return true;
+					return parser_error("Not implemented OP", tk.pos);
 			}
 		}
 		case .IDENT: {
@@ -419,20 +451,14 @@ build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
 							}
 							case .PAR_CLOSE: {}
 							case: {
-								fmt.println("Expected , ) or something");
+								return parser_error("Expected , ) or something", tkn.pos);
 							}
 						}
 					}
 
 					if !closed {
-						fmt.println("unclosed ()");
-						return true;
+						return parser_error("unclosed ()", tkn.pos);
 					}
-					if tokens[build_pos].token != .SEMICOLON {
-						fmt.println("Missing semicolon after call");
-						return true;
-					}
-
 
 					build_node = get_node({
 						.CALL,

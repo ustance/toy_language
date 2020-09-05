@@ -1,5 +1,3 @@
-var a = trace();
-var b;
-trace(a);
-trace("help");
-trace(b);
+var a;
+a = trace("hey");
+

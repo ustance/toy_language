@@ -7,6 +7,7 @@ import "core:strconv"
 
 import "core:strings"
 import "core:os"
+import "core:runtime"
 
 Token :: enum {
 	IDENT, //name_test
@@ -69,8 +70,17 @@ Line_Info :: struct {
 
 DEBUG :: false;
 
-lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 
+lexer_error :: proc(msg: string, pos: Line_Info, args: ..any) -> bool {
+	message := fmt.tprint("Lexer Error[", pos.line, "]: ", msg);
+	fmt.println(message);
+
+	return true;
+}
+
+lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken, err: bool) {
+
+	err = false;
 	tokens = make([dynamic] IToken);
 
 	pack_token :: proc(t: IToken, tokens: ^[dynamic] IToken) {
@@ -258,7 +268,7 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken) {
 						{current_pos, current_line}
 					}, &tokens);
 				} else {
-					fmt.println("Unclosed string.");
+					return nil, lexer_error("Unclosed string.", {current_pos, current_line});
 				}
 			}
 			case ';': {
