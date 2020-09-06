@@ -1,3 +1,24 @@
-var a;
-a = trace("hey");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var test_number = 25;
+test_number = test_number + 10;
+
+trace(test_number);
+
+var test_string = "Hello, ";
+test_string = test_string + "Sailor!";
+
+trace(test_string);
 

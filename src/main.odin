@@ -12,12 +12,10 @@ import "compiler"
 import "vm"
 
 IToken :: compiler.IToken;
-INode :: compiler.INode;
-IAction :: compiler.IAction;
+/* IAction :: compiler.IAction; */
 
 tokens: [dynamic] IToken; // result of lexer
-build_node: ^compiler.INode; //result of parser
-actions: [dynamic]^IAction; //result of ast_builder
+/* actions: [dynamic]^IAction; //result of ast_builder */
 
 main :: proc() {
 
@@ -42,16 +40,20 @@ main :: proc() {
 
 	if lex_err do return;
 
-	parser_err: bool;
-	build_node, parser_err = compiler.build_tokens(&tokens);
+	/* parser_err: bool; */
+	/* build_node, parser_err = compiler.build_tokens(&tokens); */
 
-	if parser_err do return;
+	p_e := compiler.parse_file(&tokens);
 
-	ast_error: bool;
-	actions, ast_error = compiler.compile(build_node);
+	compiler.interpret(&compiler.file_statements);
 
-	if ast_error do return;
+	/* if parser_err do return; */
 
-	vm.execute(actions);
+	/* ast_error: bool; */
+	/* actions, ast_error = compiler.compile(build_node); */
+
+	/* if ast_error do return; */
+
+	/* vm.execute(actions); */
 
 }

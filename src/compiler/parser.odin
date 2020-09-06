@@ -2,296 +2,212 @@ package compiler;
 
 import "core:fmt";
 
-Node :: enum {
-	NUMBER,
-	IDENT,
-	UNOP,
-	BINOP,
-
-	STR,
-	CALL,
-	BLOCK,
-
-	RET,
-	DISCARD,
-	SET,
-	VAR,
-	VAR_EMPTY,
-}
-Unop :: enum {
-	NEG,
-}
-
-Node_Value :: union {
-	Node_Number,
-	Node_Str,
-	Node_Ident,
-	Node_Unop,
-	Node_Op,
-	Node_Call,
-	Node_Block,
-	Node_Set,
-	Node_Var,
-	Node_Var_Empty,
-	Node_Ret,
-	Node_Discard,
-}
-
-
-Node_Discard :: distinct ^INode;
-Node_Ret     :: distinct ^INode;
-Node_Number  :: distinct f32;
-Node_Ident   :: struct {
-	name: string,
-}
-Node_Unop :: struct {
-	op: Unop,
-	node: ^INode,
-}
-Node_Op   :: struct {
-	op: Op,
-	node: ^INode,
-	node2: ^INode,
-}
-Node_Str  :: string;
-Node_Call :: struct {
-	name: string,
-	args: [dynamic]^INode,
-}
-Node_Block	   :: distinct [dynamic]^INode;
-Node_Set       :: distinct [2]^INode;
-Node_Var       :: distinct [2]^INode;
-Node_Var_Empty :: distinct ^INode;
-
-INode :: struct {
-	kind: Node, 
-	value: Node_Value,
+Node :: struct {
 	pos: Line_Info,
+	derived: any,
 }
 
+Expr :: struct {
+	using expr_base: Node,
+}
+
+Stmt :: struct {
+	using expr_base: Node,
+}
+
+Stmt_Return :: struct {
+	using node: Stmt,
+	result: ^Expr,
+}
+
+Expr_Op :: struct {
+	using base: Expr,
+	op: Op,
+	left: ^Expr,
+	right: ^Expr,
+}
+
+Expr_Call :: struct {
+	using base: Expr,
+	name: string,
+	args: [dynamic]^Expr,
+}
+
+Stmt_Discard :: struct {
+	using base: Stmt,
+	call: ^Expr_Call,
+}
+
+Stmt_Assign :: struct {
+	using base: Stmt,
+	name: string,
+	expr: ^Expr,
+}
+
+Stmt_Var :: struct {
+	using base: Stmt,
+	name: string,
+	expr: ^Expr,
+}
+
+Expr_Ident :: struct {
+	using node: Expr,
+	name: string,
+}
+
+Expr_Str :: struct {
+	using node: Expr,
+	content: string,
+}
+
+Expr_Numb :: struct {
+	using node: Expr,
+	value: f32,
+}
+
+DEBUG_PARSER :: false;
 build_pos: int = 0;
 build_len: int = 0;
-build_node: ^INode;
 
-build_tokens :: proc(tokens: ^[dynamic] IToken) -> (^INode, bool) {
+curr_token: IToken;
+prev_token: IToken;
+file_statements: [dynamic] ^Node = make([dynamic] ^Node);
+
+expect_token :: proc(tokens: ^[dynamic] IToken, kind: Token) -> (IToken, bool){
+	prev := curr_token;
+	if prev.token != kind {
+		e := kind;
+		g := prev.token;
+
+		message := fmt.tprint("Expected", e, "got", g);
+		fmt.println(message);
+
+		return prev, true;
+	}
+	advance_token(tokens);
+	return prev, false;
+}
+
+
+advance_token :: proc(tokens: ^[dynamic] IToken) -> IToken {
+	if curr_token.token != .EOF {
+		prev_token = curr_token;
+
+		build_pos += 1;
+		curr_token = tokens[build_pos];
+
+		if DEBUG_PARSER {
+			fmt.println(prev_token.token, " -> ", curr_token.token);
+		}
+	}
+
+	return curr_token;
+}
+
+
+parse_file :: proc(tokens: ^[dynamic] IToken) -> bool {
+	curr_token = tokens[0];
+	prev_token = tokens[0];
+
 	build_pos = 0;
 	build_len = len(tokens^) - 1;
 
-	temp_nodes := make([dynamic] ^INode);
-	found := 0;
+	for curr_token.token != .EOF {
+		stmt := parse_stmt(tokens);
 
-	for build_pos < build_len {
-		if build_stat(tokens) {
-			return nil, true;
+		if stmt != nil {
+			append(&file_statements, stmt);
 		}
-		append(&temp_nodes, build_node);
 	}
-
-	block_node: Node_Block;
-	block_node = (Node_Block)(temp_nodes);
-
-	build_node = get_node({
-		.BLOCK,
-		block_node,
-		{0,0}
-	});
-
-	return build_node, false;
-}
-
-get_node :: proc(node: INode) -> ^INode{
-	new_node := new(INode);
-
-	new_node.kind = node.kind;
-	new_node.pos = node.pos;
-	new_node.value = node.value;
-
-	return new_node;
-}
-
-peek :: proc(tokens: ^[dynamic]IToken, f: int) -> ^IToken {
-	if build_pos+f > build_len {
-		return nil;
-	}
-
-	return &tokens[build_pos+f];
-}
-
-parser_error :: proc(msg: string, pos: Line_Info, args: ..any) -> bool {
-	message := fmt.tprint("Parser Error[", pos.line, "]: ", msg);
-
-	fmt.println(message);
 
 	return true;
 }
 
-build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
-	tk := &tokens[build_pos];
-	build_pos += 1;
-	tkn: ^IToken = nil;
-	#partial switch tk.token {
+
+new_ast :: proc($T: typeid, pos: Line_Info) -> ^T {
+	n := new(T);
+	n.pos = pos;
+	n.derived = n^;
+	base: ^Node = n;
+	_ = base;
+	return n;
+}
+
+parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
+	#partial switch curr_token.token {
 		case .VAR: {
-			
-			next_tkn := peek(tokens, 0);
+			var_token := curr_token;
+			advance_token(tokens);
 
-			#partial switch next_tkn.token {
-				case .EOF: {
-					return parser_error("unexpected EOF", next_tkn.pos);
-				}
+			ident, _ := expect_token(tokens, .IDENT);
 
-				case .IDENT: {
-					after_ident := peek(tokens, 1);
+			right_expr: ^Expr;
 
-					#partial switch after_ident.token {
-						case .SEMICOLON: {
-							if build_expr(tokens, 0) {
-								return true;
-							}
+			#partial switch curr_token.token {
+				case .OP: {
+					advance_token(tokens);
 
-							ident: Node_Var_Empty;
-							ident = (Node_Var_Empty) (build_node);
-
-							build_node = get_node({
-								.VAR_EMPTY,
-								ident,
-								tk.pos,
-							});
-							build_pos += 1;
-						}
-						case .OP: {
-							if build_stat(tokens) {
-								return true;
-							}
-
-							if build_node.kind == .SET {
-								stat: Node_Var;
-								stat = (Node_Var)(([2]^INode)(build_node.value.(Node_Set)));
-
-								build_node = get_node({
-									.VAR,
-									stat,
-									tk.pos,
-								});
-							} else {
-								return parser_error("Expected a set statement", tkn.pos);
-							}
-						}
-						case: {
-							return parser_error("Expected a set statement", tkn.pos);
-						}
-					}
-				}
-
-				case: {
-					return parser_error("error in var statement", next_tkn.pos);
+					right_expr = parse_expr(tokens, 0);
 				}
 			}
+			expect_token(tokens, .SEMICOLON);
 
+			vs := new_ast(Stmt_Var, var_token.pos);
+			vs.name = ident.value.(string);
+			vs.expr = right_expr;
+
+			return vs;
 		}
 		case .RET: {
-			if build_expr(tokens, 0) {
-				return true;
-			}
+			return_token := curr_token;
+			tok := advance_token(tokens);
 
-			ret_node: Node_Ret;
-			ret_node = (Node_Ret)(build_node);
+			expr := parse_expr(tokens, 0);
 
-			build_node = get_node({
-				.RET,
-				ret_node,
-				tk.pos,
-			});
-		}
-		case .CB_OPEN: {
-			temp_nodes := make([dynamic]^INode);
-			found := 0;
-			closed := false;
+			expect_token(tokens, .SEMICOLON);
 
-			for build_pos < build_len {
-				tkn = &tokens[build_pos];
+			rs := new_ast(Stmt_Return, return_token.pos);
+			rs.result = expr;
 
-				#partial switch tkn.token {
-					case .CB_CLOSE: {
-						build_pos += 1;
-						closed = true;
-					}
-				}
-
-				if build_stat(tokens) do return true;
-				append(&temp_nodes, build_node);
-				found += 1;
-			}
-
-			if !closed do return parser_error("Unclosed {}", tkn.pos);
-
-			block_nodes: Node_Block;
-			block_nodes = (Node_Block)(temp_nodes);
-
-			build_node = get_node({
-				.BLOCK,
-				block_nodes,
-				tk.pos
-			});
+			return rs;
 		}
 		case: {
-			build_pos -= 1;
-			if build_expr(tokens, 1) do return true;
+			tk := curr_token;
+			next_tk, _ := peek_token(tokens, 1);
 
-			expr := build_node;
+			expr := parse_expr(tokens, 1);
 
-			#partial switch build_node.kind {
-				case .CALL: {
-					discard_node: Node_Discard;
-					discard_node = (Node_Discard)(build_node);
+			switch v in expr.derived {
+				case Expr_Call: {
+					expect_token(tokens, .SEMICOLON);
 
-					if tokens[build_pos].token != .SEMICOLON {
-						return parser_error("Missing semicolon after call", tkn.pos);
-					}
+					ds := new_ast(Stmt_Discard, tk.pos);
+					ds.call = auto_cast expr;
 
-					build_pos += 1;
-
-					build_node = get_node({
-						.DISCARD,
-						discard_node,
-						tk.pos
-					});
+					return ds;
 				}
 				case: {
-					tkn = &tokens[build_pos];
-
-					#partial switch tkn.token {
+					#partial switch next_tk.token {
 						case .OP: {
-							op_value := tkn.value.(Op);
+							op_value := curr_token.value.(Op);
+
 							#partial switch op_value {
 								case .SET: {
+									advance_token(tokens);
 
-									build_pos += 1;
-									if build_expr(tokens, 0) {
-										return parser_error("building set expressiong", tkn.pos);
-									}
+									right_expr := parse_expr(tokens, 0);
 
-									next_tkn := peek(tokens, 0);
-									if next_tkn.token != .SEMICOLON {
-										return parser_error("missing ;", next_tkn.pos);
-									}
+									expect_token(tokens, .SEMICOLON);
 
-									build_pos += 1;
+									set_stmt := new_ast(Stmt_Assign, tk.pos);
+									set_stmt.name = (^Expr_Ident)(expr).name;
+									set_stmt.expr = right_expr;
 
-									anodes: Node_Set = {
-										expr,
-										build_node
-									};
+									free(expr);
 
-									build_node = get_node({
-										.SET,
-										anodes,
-										tk.pos
-									});
+									return set_stmt;
 								}
-							}
-						}
-						case: {
-							return true;
+							}							
 						}
 					}
 				}
@@ -299,30 +215,147 @@ build_stat :: proc(tokens: ^[dynamic]IToken) -> bool {
 		}
 	}
 
-	return false;
+	return nil;
 }
 
-build_ops :: proc(tokens: ^[dynamic]IToken, _tk: ^IToken) -> bool {
-	temp_nodes := make([dynamic]^INode);	
-	append(&temp_nodes, build_node);
+peek_token :: proc(tokens: ^[dynamic]IToken, f: int) -> (IToken, bool) {
+	if build_pos+f > build_len {
+		return {}, true;
+	}
 
-	ops := make([dynamic]^IToken);
+	return tokens[build_pos+f], false;
+}
+
+
+parse_expr :: proc(tokens: ^[dynamic] IToken, no_ops: int) -> (build_expr: ^Expr) {
+	tk := curr_token;
+	advance_token(tokens);
+
+	#partial switch tk.token {
+		case .STR: {
+			str := tk.value.(string);
+
+			str_node := new_ast(Expr_Str, tk.pos);
+			str_node.content = str;
+
+			build_expr = str_node;
+
+		}
+		case .NUMBER: {
+			numb := tk.value.(f32);
+
+			numb_node := new_ast(Expr_Numb, tk.pos);
+			numb_node.value = numb;
+
+			build_expr = numb_node;
+		}
+		case .OP: {
+			op_value := tk.value.(Op);
+			#partial switch op_value {
+				case .ADD: {
+					build_expr = parse_expr(tokens, 1);
+				}
+				case .SUB: {
+					expr := parse_expr(tokens, 1);
+
+					build_expr = expr;
+				}
+				case: {
+					fmt.println("not implemented op");
+					return nil;
+				}
+			}
+		}
+		case .IDENT: {
+			ident_name := tk.value.(string);
+			
+			#partial switch curr_token.token {
+				case .PAR_OPEN: {
+					args := make([dynamic]^Expr);
+					argc := 0;
+					closed := false;
+
+					advance_token(tokens);
+
+					loop: for build_pos < build_len {
+						#partial switch curr_token.token {
+							case .PAR_CLOSE: {
+								advance_token(tokens);
+								closed = true;
+								break loop;
+							}
+						}
+
+						arg_expr := parse_expr(tokens, 0);
+						append(&args, arg_expr);
+						argc += 1;
+
+						#partial switch curr_token.token {
+							case .COMMA: {
+								advance_token(tokens);
+							}
+							case .PAR_CLOSE: {}
+							case: {
+								return nil;
+							}
+						}
+					}
+
+					if !closed {
+						return nil;
+					}
+
+					call_node := new_ast(Expr_Call, tk.pos);
+					call_node.name = ident_name;
+					call_node.args = args;
+
+					build_expr = call_node;
+				}
+				case: {
+					ie := new_ast(Expr_Ident, tk.pos);
+					ie.name = ident_name;
+
+					build_expr = ie;
+				}
+			}
+
+		}
+	}
+
+	if (no_ops & 1) == 0 {
+		if curr_token.token == .OP {
+			_tk := curr_token;
+			advance_token(tokens);
+
+			op_expr := parse_ops(tokens, build_expr, _tk);
+
+			build_expr = op_expr;
+		}
+	}
+
+	return;
+}
+
+parse_ops :: proc(tokens: ^[dynamic]IToken, _expr: ^Expr, _tk: IToken) -> ^Expr {
+	temp_exprs := make([dynamic]^Expr);
+	append(&temp_exprs, _expr); //HERE:
+
+	ops := make([dynamic]IToken);
 	append(&ops, _tk);
 
-	tk: ^IToken;
+	tk: IToken;
 
 	for true {
-		if build_expr(tokens, 1) do return true;
-
-		append(&temp_nodes, build_node);
-
-		tk = &tokens[build_pos];
+		expr := parse_expr(tokens, 1);
+		append(&temp_exprs, expr);
 
 		to_break := false;
 
+		tk = curr_token;
+
 		#partial switch tk.token {
 			case .OP: {
-				build_pos += 1;
+				advance_token(tokens);
 				append(&ops, tk);
 			}
 			case: to_break = true;
@@ -346,151 +379,24 @@ build_ops :: proc(tokens: ^[dynamic]IToken, _tk: ^IToken) -> bool {
 						continue;
 					}
 
-					temp_nodes[i] = get_node({
-						.BINOP,
-						Node_Op {op, temp_nodes[i], temp_nodes[i + 1]},
-						tk.pos
-					});
+					new_expr := new_ast(Expr_Op, tk.pos);
+					new_expr.op = op;
+					new_expr.left = temp_exprs[i];
+					new_expr.right = temp_exprs[i+1];
 
-					unordered_remove(&temp_nodes, i+1);
+					temp_exprs[i] = new_expr;
+
+					unordered_remove(&temp_exprs, i+1);
 					unordered_remove(&ops, i);
 					n -= 1;
 					i -= 1;
 				}
-				case: {}
+				case:{}
 			}
 			i += 1;
 		}
 		pri += 1;
 	}
-	build_node = temp_nodes[0];
-	return false;
-}
 
-build_expr :: proc(tokens: ^[dynamic]IToken, flags: int) -> bool {
-	tk: ^IToken = &tokens[build_pos];
-	build_pos += 1;
-
-	#partial switch tk.token {
-		case .SEMICOLON: {
-			parser_error("Unexpected semicolon", tk.pos);
-		}
-		case .NUMBER: {
-			number_node: Node_Number;
-			number_node = (Node_Number)(tk.value.(f32));
-			build_node = get_node({
-				.NUMBER,
-				number_node,
-				tk.pos
-			});
-		}
-		case .STR: {
-			build_node = get_node({
-				.STR,
-				tk.value.(string),
-				tk.pos
-			});
-		}
-		case .PAR_OPEN: {
-			if build_expr(tokens, 0) do return true;
-			tk = &tokens[build_pos];
-			build_pos += 1;
-
-			if tk.token != .PAR_CLOSE {
-				return parser_error("expected )", tk.pos);
-			}
-		}
-		case .OP: {
-			op_value := tk.value.(Op);
-			#partial switch op_value {
-				case .ADD: {
-					if build_expr(tokens, 1) do return true;
-				}
-				case .SUB: {
-					if build_expr(tokens, 1) do return true;
-					build_node = get_node({
-						.UNOP,
-						Node_Unop {.NEG, build_node},
-						tk.pos,
-					});
-				}
-				case:
-					return parser_error("Not implemented OP", tk.pos);
-			}
-		}
-		case .IDENT: {
-			tkn := &tokens[build_pos];
-
-			#partial switch tkn.token {
-				case .PAR_OPEN: {
-					build_pos += 1;
-
-					args := make([dynamic]^INode);
-					argc := 0;
-					closed := false;
-
-					loop: for build_pos < build_len {
-						tkn = &tokens[build_pos];
-
-						#partial switch tkn.token {
-							case .PAR_CLOSE: {
-								build_pos += 1;
-								closed = true;
-								break loop;
-							}
-						}
-
-						if build_expr(tokens, 0) do return true;
-						append(&args, build_node);
-						argc += 1;
-
-						tkn = &tokens[build_pos];
-						#partial switch tkn.token {
-							case .COMMA: {
-								build_pos += 1;
-							}
-							case .PAR_CLOSE: {}
-							case: {
-								return parser_error("Expected , ) or something", tkn.pos);
-							}
-						}
-					}
-
-					if !closed {
-						return parser_error("unclosed ()", tkn.pos);
-					}
-
-					build_node = get_node({
-						.CALL,
-						Node_Call {tk.value.(string), args},
-						tk.pos
-					});
-				}
-				case: {
-
-					ident_node: Node_Ident;
-					ident_node = {
-						tk.value.(string)
-					};
-					build_node = get_node({
-						.IDENT,
-						ident_node,
-						tk.pos,
-					});
-				}
-			}
-		}
-	}
-
-	if (flags & 1) == 0 {
-		tk = &tokens[build_pos];
-		#partial switch tk.token {
-			case .OP: {
-				build_pos += 1;
-				if build_ops(tokens, tk) do return true;
-			}
-		}
-	}
-
-	return false;
+	return temp_exprs[0];
 }

@@ -9,6 +9,7 @@ import "core:unicode"
 import "core:unicode/utf8"
 import "core:strconv"
 
+/*
 IToken :: compiler.IToken;
 Token :: compiler.Token;
 Token_Value :: compiler.Token_Value;
@@ -158,3 +159,4 @@ execute :: proc(actions: [dynamic]^IAction) {
 	
 }
 
+*/
