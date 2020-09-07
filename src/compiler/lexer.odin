@@ -19,6 +19,7 @@ Token :: enum {
 	FN,
 	RET,
 	VAR,
+	TYPE,
 
 	CB_OPEN, //{
 	CB_CLOSE, //}
@@ -53,6 +54,7 @@ Op :: enum {
 Token_Value :: union {
 	string,
 	f32,
+	typeid,
 	Op,
 }
 
@@ -329,6 +331,27 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken, err: boo
 
 					word := source_string[start:index];
 					switch word {
+						case "int": {
+							pack_token(IToken {
+								.TYPE,
+								typeid_of(int),
+								{start_pos, current_line}
+							}, &tokens);
+						}
+						case "float": {
+							pack_token(IToken {
+								.TYPE,
+								typeid_of(f32),
+								{start_pos, current_line}
+							}, &tokens);
+						}
+						case "string": {
+							pack_token(IToken {
+								.TYPE,
+								typeid_of(string),
+								{start_pos, current_line}
+							}, &tokens);
+						}
 						case "fn": {
 							pack_token(IToken {
 								.FN,

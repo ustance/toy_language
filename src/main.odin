@@ -45,7 +45,9 @@ main :: proc() {
 
 	p_e := compiler.parse_file(&tokens);
 
-	compiler.interpret(&compiler.file_statements);
+	compiler.analyse(&compiler.file_statements);
+
+	/* compiler.interpret(&compiler.file_statements); */
 
 	/* if parser_err do return; */
 

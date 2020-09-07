@@ -9,10 +9,15 @@ Node :: struct {
 
 Expr :: struct {
 	using expr_base: Node,
+	type: typeid,
 }
 
 Stmt :: struct {
 	using expr_base: Node,
+}
+
+Decl :: struct {
+	using decl_base: Stmt,
 }
 
 Stmt_Return :: struct {
@@ -44,10 +49,23 @@ Stmt_Assign :: struct {
 	expr: ^Expr,
 }
 
-Stmt_Var :: struct {
+Stmt_Block :: struct {
 	using base: Stmt,
+	stmts: [dynamic]^Stmt,
+}
+
+Decl_Var :: struct {
+	using base: Decl,
 	name: string,
+	type: typeid,
 	expr: ^Expr,
+}
+
+Decl_Fn :: struct {
+	using base: Decl,
+	name: string,
+	type: typeid,
+	block: ^Stmt_Block,
 }
 
 Expr_Ident :: struct {
@@ -72,6 +90,8 @@ build_len: int = 0;
 curr_token: IToken;
 prev_token: IToken;
 file_statements: [dynamic] ^Node = make([dynamic] ^Node);
+
+expr_level: int = 0; // 0 is file declaration level
 
 expect_token :: proc(tokens: ^[dynamic] IToken, kind: Token) -> (IToken, bool){
 	prev := curr_token;
@@ -133,8 +153,111 @@ new_ast :: proc($T: typeid, pos: Line_Info) -> ^T {
 	return n;
 }
 
+declarations: map[string] typeid;
+determine_type_of_expr :: proc(expr: ^Expr) -> typeid {
+	switch v in expr.derived {
+		case Expr_Ident: {
+			if v.name in declarations {
+				return declarations[v.name];
+			}
+			return nil;
+		}
+		case Expr_Str: {
+			return typeid_of(string);
+		}
+		case Expr_Numb: {
+			return typeid_of(f32);
+		}
+		case Expr_Call: {
+			return typeid_of(proc());
+		}
+		case Expr_Op: {
+			left_type := determine_type_of_expr(v.left);
+			right_type := determine_type_of_expr(v.right);
+
+			if left_type == nil || right_type == nil {
+				return nil;
+			}
+
+			if left_type != right_type {
+				fmt.println("trying to op on", left_type, "and", right_type);
+				return nil;
+			}
+
+			return left_type;
+		}
+		case: {
+			fmt.println("Cannot determine type of ", expr.derived);
+			return nil;
+		}
+	}
+}
+
 parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 	#partial switch curr_token.token {
+		case .FN: {
+			fn_token := curr_token;
+			tk := advance_token(tokens);
+
+			ident, _ := expect_token(tokens, .IDENT);
+
+			expect_token(tokens, .PAR_OPEN);
+			expect_token(tokens, .PAR_CLOSE);
+			
+			block_stmt := parse_stmt(tokens);
+
+			ds := new_ast(Decl_Fn, fn_token.pos);
+			ds.name = ident.value.(string);
+			ds.type = nil;
+			ds.block = auto_cast block_stmt;
+
+			fmt.println(ident.value.(string));
+		}
+		case .CB_OPEN: {
+			cb_token := curr_token;
+			tk := advance_token(tokens);
+
+			nodes: [dynamic]^Stmt;
+
+			closed := true;
+
+			loop: for {
+				if tk.token == .CB_CLOSE {
+					advance_token(tokens);
+					break loop;
+				}
+
+				stmt := parse_stmt(tokens);
+				if stmt == nil {
+					return nil;
+				}
+				append(&nodes, stmt);
+
+				tk = curr_token;
+				fmt.println(tk);
+
+				if tk.token == .CB_CLOSE {
+					advance_token(tokens);
+					break loop;
+				} else if tk.token == .EOF {
+					closed = false;
+					break loop;
+				}
+			}
+
+			if !closed {
+				fmt.println("block not closed");
+				return nil;
+			}
+
+			fmt.println(nodes);
+
+			bs := new_ast(Stmt_Block, cb_token.pos);
+			bs.stmts = nodes;
+
+			return bs;
+
+		}
 		case .VAR: {
 			var_token := curr_token;
 			advance_token(tokens);
@@ -142,19 +265,71 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 			ident, _ := expect_token(tokens, .IDENT);
 
 			right_expr: ^Expr;
+			type_of_expr: typeid;
+
+			#partial switch curr_token.token {
+				case .COLON: {
+					advance_token(tokens);
+					
+					tk, _ := expect_token(tokens, .TYPE);
+					type_of_expr = tk.value.(typeid);
+				}
+			}
 
 			#partial switch curr_token.token {
 				case .OP: {
 					advance_token(tokens);
 
 					right_expr = parse_expr(tokens, 0);
+
+					denoted_type := type_of_expr;
+					type_of_expr = right_expr.type;
+
+					if denoted_type != nil {
+						if denoted_type != type_of_expr {
+							fmt.println("Expected expr of type", denoted_type, ", got", type_of_expr);
+							return nil;
+						}
+					}
+				}
+				case: {
+					if type_of_expr == nil {
+						fmt.println("Cannot determine the type of variable without a type annotation or = expression.");
+						return nil;
+					}
 				}
 			}
 			expect_token(tokens, .SEMICOLON);
 
-			vs := new_ast(Stmt_Var, var_token.pos);
+			vs := new_ast(Decl_Var, var_token.pos);
 			vs.name = ident.value.(string);
-			vs.expr = right_expr;
+			vs.type = type_of_expr;
+
+			if right_expr == nil {
+				//default values	
+				switch type_of_expr {
+					case string: {
+						default_str := new_ast(Expr_Str, curr_token.pos);
+						default_str.content = "";
+
+						vs.expr = default_str;
+					}
+					case f32: {
+						default_float := new_ast(Expr_Numb, curr_token.pos);
+						default_float.value = 0;
+
+						vs.expr = default_float;
+					}
+					case: {
+						fmt.println("Cannot set default value of type", type_of_expr);
+						return nil;
+					}
+				}
+			} else {
+				vs.expr = right_expr;
+			}
+
+			declarations[vs.name] = vs.type;
 
 			return vs;
 		}
@@ -314,6 +489,9 @@ parse_expr :: proc(tokens: ^[dynamic] IToken, no_ops: int) -> (build_expr: ^Expr
 				case: {
 					ie := new_ast(Expr_Ident, tk.pos);
 					ie.name = ident_name;
+					if ie.name in declarations {
+						ie.type = declarations[ie.name];
+					} 
 
 					build_expr = ie;
 				}
@@ -332,6 +510,9 @@ parse_expr :: proc(tokens: ^[dynamic] IToken, no_ops: int) -> (build_expr: ^Expr
 			build_expr = op_expr;
 		}
 	}
+
+	type_of_build_expr := determine_type_of_expr(build_expr);
+	build_expr.type = type_of_build_expr;
 
 	return;
 }
@@ -398,5 +579,10 @@ parse_ops :: proc(tokens: ^[dynamic]IToken, _expr: ^Expr, _tk: IToken) -> ^Expr 
 		pri += 1;
 	}
 
-	return temp_exprs[0];
+	result := temp_exprs[0];
+
+	delete(temp_exprs);
+	delete(ops);
+
+	return result;
 }

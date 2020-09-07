@@ -1,24 +1,8 @@
 
+var another_string = test_string + "sailor";
+var test_string: string = "Hey, pussy";
 
 
+fn main() {
 
-
-
-
-
-
-
-
-
-
-
-var test_number = 25;
-test_number = test_number + 10;
-
-trace(test_number);
-
-var test_string = "Hello, ";
-test_string = test_string + "Sailor!";
-
-trace(test_string);
-
+}

@@ -8,7 +8,12 @@ import "core:unicode"
 import "core:unicode/utf8"
 import "core:strconv"
 
-Interpretor_Value :: union {
+Interpretor_Value :: struct {
+	value: Interpretor_Value_Type,
+	type: typeid,
+}
+
+Interpretor_Value_Type :: union {
 	f32,
 	string,
 }
@@ -30,10 +35,11 @@ interpret :: proc(stmts: ^[dynamic] ^Node) {
 	interop.funcs["trace"] = proc(args: ^[dynamic]Interpretor_Value) -> Interpretor_Value {
 		argc := len(args);
 		for i in 0..<argc {
-			fmt.print(args[i]);
+			fmt.print(args[i].value);
+			fmt.print(": ", args[i].type);
 		}
 		fmt.println();
-		return nil;
+		return {nil, nil};
 	};
 
 	fmt.println("---------");
@@ -43,10 +49,12 @@ interpret :: proc(stmts: ^[dynamic] ^Node) {
 	fmt.println("---------");
 }
 
-op_add :: proc(a: Interpretor_Value, b: Interpretor_Value) -> Interpretor_Value {
-	switch v in a {
+op_add :: proc(_a: Interpretor_Value, _b: Interpretor_Value) -> Interpretor_Value {
+	a := _a.value;
+	b := _b.value;
+	switch v in a{
 		case f32: {
-			return a.(f32) + b.(f32);
+			return {a.(f32) + b.(f32), typeid_of(f32)};
 		}
 		case string: {
 			add_builder := strings.make_builder();
@@ -58,11 +66,11 @@ op_add :: proc(a: Interpretor_Value, b: Interpretor_Value) -> Interpretor_Value 
 
 			strings.destroy_builder(&add_builder);
 
-			return result;
+			return {result, typeid_of(string)};
 		}
 	}
 
-	return nil;
+	return {nil, nil};
 }
 
 interpret_expr :: proc(interop: ^Interop, node: ^Node) -> Interpretor_Value {
@@ -79,17 +87,17 @@ interpret_expr :: proc(interop: ^Interop, node: ^Node) -> Interpretor_Value {
 				}
 			}
 		}
-		case Stmt_Var: {
+		case Decl_Var: {
 			variables[v.name] = interpret_expr(interop, v.expr);
 		}
 		case Stmt_Assign: {
 			variables[v.name] = interpret_expr(interop, v.expr);
 		}
 		case Expr_Numb: {
-			return v.value;
+			return {v.value, typeid_of(f32)};
 		}
 		case Expr_Str: {
-			return v.content;
+			return {v.content, typeid_of(string)};
 		}
 		case Expr_Ident: {
 			return variables[v.name];
@@ -100,6 +108,7 @@ interpret_expr :: proc(interop: ^Interop, node: ^Node) -> Interpretor_Value {
 				append(&args, interpret_expr(interop, a));
 			}
 			return_value := funcs[v.name](&args);
+			delete(args);
 			return return_value;
 		}
 		case Stmt_Discard: {
@@ -109,5 +118,5 @@ interpret_expr :: proc(interop: ^Interop, node: ^Node) -> Interpretor_Value {
 		case: fmt.println(node.derived);
 	}
 
-	return nil;
+	return {nil, nil};
 }
