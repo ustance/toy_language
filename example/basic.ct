@@ -1,8 +1,7 @@
 
-var another_string = test_string + "sailor";
-var test_string: string = "Hey, pussy";
-
+var d: string = t + ", Sailor!";
+var t: string = "Hey";
 
 fn main() {
-
+	trace(d);
 }
