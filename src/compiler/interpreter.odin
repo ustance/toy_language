@@ -109,6 +109,11 @@ interpret_stmt :: proc(interop: ^Interop, node: ^Node) {
 				interpret_stmt(interop, stmt);
 			}
 		}
+		case Decl_Fn: {
+			decl_fn: ^Decl_Fn = auto_cast node;
+			//name, type, block
+			user_funcs[v.name] = &decl_fn.block.stmts;
+		}
 		case Stmt_Discard: {
 			call := v.call;
 			interpret_expr(interop, call);
@@ -144,13 +149,19 @@ interpret_expr :: proc(interop: ^Interop, node: ^Node) -> Interpretor_Value {
 			return variables[v.name];
 		}
 		case Expr_Call: {
-			args: [dynamic] Interpretor_Value;
-			for a in v.args {
-				append(&args, interpret_expr(interop, a));
+			expr_call: ^Expr_Call = auto_cast node;
+
+			if expr_call.name in user_funcs {
+				call_user_func(interop, expr_call.name);
+			} else {
+				args: [dynamic] Interpretor_Value;
+				for a in v.args {
+					append(&args, interpret_expr(interop, a));
+				}
+				return_value := funcs[v.name](&args);
+				delete(args);
+				return return_value;
 			}
-			return_value := funcs[v.name](&args);
-			delete(args);
-			return return_value;
 		}
 		case: fmt.println(node.derived);
 	}

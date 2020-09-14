@@ -17,11 +17,17 @@ IToken :: compiler.IToken;
 tokens: [dynamic] IToken; // result of lexer
 /* actions: [dynamic]^IAction; //result of ast_builder */
 
+test_func :: proc() {
+	
+}
+
 main :: proc() {
 
 	source_builder := strings.make_builder();
 
 	source_data, ok := os.read_entire_file("example/basic.ct");
+
+	test_func();
 
 	if !ok {
 		fmt.println("\nError reading a file!\n");
@@ -40,22 +46,11 @@ main :: proc() {
 
 	if lex_err do return;
 
-	/* parser_err: bool; */
-	/* build_node, parser_err = compiler.build_tokens(&tokens); */
-
 	p_e := compiler.parse_file(&tokens);
+	if !p_e do return;
 
-	compiler.analyse(&compiler.file_statements);
+	a_e := compiler.analyse(&compiler.file_statements);
+	if a_e do return;
 
 	compiler.interpret(&compiler.file_statements);
-
-	/* if parser_err do return; */
-
-	/* ast_error: bool; */
-	/* actions, ast_error = compiler.compile(build_node); */
-
-	/* if ast_error do return; */
-
-	/* vm.execute(actions); */
-
 }

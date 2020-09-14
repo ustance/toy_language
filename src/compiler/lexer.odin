@@ -20,6 +20,7 @@ Token :: enum {
 	RET,
 	VAR,
 	TYPE,
+	FOREIGN,
 
 	CB_OPEN, //{
 	CB_CLOSE, //}
@@ -355,6 +356,13 @@ lex_things :: proc(source_string: string) -> (tokens: [dynamic] IToken, err: boo
 						case "fn": {
 							pack_token(IToken {
 								.FN,
+								nil,
+								{start_pos, current_line}
+							}, &tokens);
+						}
+						case "foreign": {
+							pack_token(IToken {
+								.FOREIGN,
 								nil,
 								{start_pos, current_line}
 							}, &tokens);

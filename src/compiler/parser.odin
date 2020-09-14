@@ -3,7 +3,7 @@ package compiler;
 import "core:fmt";
 
 Scope_Info :: struct {
-	scope: i32,
+	parent: ^Stmt_Block,
 	pos: i32,
 }
 
@@ -15,6 +15,7 @@ Node :: struct {
 Expr :: struct {
 	using expr_base: Node,
 	type: typeid,
+	scope: Scope_Info,
 }
 
 Stmt :: struct {
@@ -74,6 +75,12 @@ Decl_Fn :: struct {
 	block: ^Stmt_Block,
 }
 
+Decl_Foreign_Fn :: struct {
+	using base: Decl,
+	name: string,
+	type: typeid,
+}
+
 Expr_Ident :: struct {
 	using node: Expr,
 	name: string,
@@ -96,8 +103,6 @@ build_len: int = 0;
 curr_token: IToken;
 prev_token: IToken;
 file_statements: [dynamic] ^Node = make([dynamic] ^Node);
-
-scope_level: Scope_Info; // 0 is file scope;
 
 expect_token :: proc(tokens: ^[dynamic] IToken, kind: Token) -> (IToken, bool){
 	prev := curr_token;
@@ -139,6 +144,7 @@ parse_file :: proc(tokens: ^[dynamic] IToken) -> bool {
 	build_len = len(tokens^) - 1;
 
 	for curr_token.token != .EOF {
+
 		stmt := parse_stmt(tokens);
 
 		if stmt != nil {
@@ -162,7 +168,6 @@ new_ast :: proc($T: typeid, pos: Line_Info) -> ^T {
 declarations: map[string] ^Decl;
 
 parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
-	defer scope_level.pos += 1;
 	#partial switch curr_token.token {
 		case .FN: {
 			fn_token := curr_token;
@@ -179,7 +184,28 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 			ds.name = ident.value.(string);
 			ds.type = nil;
 			ds.block = auto_cast block_stmt;
-			ds.scope = scope_level;
+
+			declarations[ds.name] = ds;
+
+			return ds;
+		}
+		case .FOREIGN: {
+			foreign_token := curr_token;
+			tk := advance_token(tokens);
+
+			expect_token(tokens, .FN);
+
+			ident, _ := expect_token(tokens, .IDENT);
+
+			expect_token(tokens, .PAR_OPEN);
+			expect_token(tokens, .PAR_CLOSE);
+			expect_token(tokens, .SEMICOLON);
+
+			ds := new_ast(Decl_Foreign_Fn, foreign_token.pos);
+			ds.name = ident.value.(string);
+			ds.type = nil;
+
+			declarations[ds.name] = ds;
 
 			return ds;
 		}
@@ -191,9 +217,6 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 
 			closed := true;
 
-			old_pos := scope_level.pos;
-			scope_level.scope += 1;
-			scope_level.pos = 0;
 			loop: for {
 				if tk.token == .CB_CLOSE {
 					advance_token(tokens);
@@ -216,8 +239,6 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 					break loop;
 				}
 			}
-			scope_level.scope -= 1;
-			scope_level.pos = old_pos;
 
 			if !closed {
 				fmt.println("block not closed");
@@ -226,7 +247,6 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 
 			bs := new_ast(Stmt_Block, cb_token.pos);
 			bs.stmts = nodes;
-			bs.scope = scope_level;
 
 			return bs;
 
@@ -263,7 +283,6 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 			vs := new_ast(Decl_Var, var_token.pos);
 			vs.name = ident.value.(string);
 			vs.type = type_of_var;
-			vs.scope = scope_level;
 			vs.expr = right_expr;
 
 			declarations[vs.name] = vs;
@@ -280,7 +299,6 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 
 			rs := new_ast(Stmt_Return, return_token.pos);
 			rs.result = expr;
-			rs.scope = scope_level;
 
 			return rs;
 		}
@@ -296,7 +314,6 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 
 					ds := new_ast(Stmt_Discard, tk.pos);
 					ds.call = auto_cast expr;
-					ds.scope = scope_level;
 
 					return ds;
 				}
@@ -316,7 +333,6 @@ parse_stmt :: proc(tokens: ^[dynamic] IToken) -> ^Stmt {
 									set_stmt := new_ast(Stmt_Assign, tk.pos);
 									set_stmt.name = (^Expr_Ident)(expr).name;
 									set_stmt.expr = right_expr;
-									set_stmt.scope = scope_level;
 
 									free(expr);
 

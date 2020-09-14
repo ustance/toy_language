@@ -2,7 +2,7 @@ package compiler;
 
 import "core:fmt";
 
-ANALYSER_DEBUG :: false;
+ANALYSER_DEBUG :: true;
 
 set_to_default_value :: proc(decl: ^Decl_Var) -> bool {
 	switch decl.type {
@@ -37,7 +37,6 @@ analyse_decl_var :: proc(decl_var: ^Decl_Var) -> bool {
 	err := resolve_expr_type(decl_var.expr);
 	if err do return true;
 
-
 	if decl_var.type != nil && (decl_var.type != decl_var.expr.type) {
 		fmt.println("expected", decl_var.type, "got", decl_var.expr.type);
 		return true;
@@ -50,30 +49,36 @@ analyse_decl_var :: proc(decl_var: ^Decl_Var) -> bool {
 	return false;
 }
 
-current_scope: Scope_Info;
 analyse :: proc(ast: ^[dynamic] ^Node) -> (err: bool) {
 	for stmt in ast {
-		defer current_scope.pos += 1;
 		switch v in stmt.derived {
 			case Decl_Var: {
 				decl_var: ^Decl_Var = auto_cast stmt;
 				err := analyse_decl_var(decl_var);
 				if err do return true;
 			}
+			case Decl_Foreign_Fn: {
+				decl_foreign_fn: ^Decl_Foreign_Fn = auto_cast stmt;
+
+				if decl_foreign_fn.scope.parent != nil {
+					fmt.println("Foreign functions can only be declared at file scope");
+					return true;
+				}
+			}
 			case Decl_Fn: {
 				decl_fn: ^Decl_Fn = auto_cast stmt;
 
-				old_pos := current_scope.pos;
-				current_scope.pos = 0;
-				current_scope.scope += 1;
+				curr_pos: i32 = 0;
 				for stmt in decl_fn.block.stmts {
+					stmt.scope = {
+						decl_fn.block,
+						curr_pos,
+					};
 					err := analyse_stmt(stmt);
 					if err do return true;
-					current_scope.pos += 1;
-				}
-				current_scope.scope -= 1;
-				current_scope.pos = old_pos;
 
+					curr_pos += 1;
+				}
 			}
 			case: {
 				fmt.println("You can't do anything in file scope. Kinda.");
@@ -102,6 +107,16 @@ analyse :: proc(ast: ^[dynamic] ^Node) -> (err: bool) {
 	return;
 }
 
+analyse_expr :: proc(expr: ^Expr) -> bool {
+
+	switch v in expr.derived {
+		case Expr_Call: {
+			expr_call: ^Expr_Call = auto_cast expr;
+		}
+	}
+	
+	return false;
+}
 
 analyse_stmt :: proc(stmt: ^Stmt) -> bool {
 
@@ -111,10 +126,22 @@ analyse_stmt :: proc(stmt: ^Stmt) -> bool {
 			err := analyse_decl_var(decl_var);
 			if err do return true;
 		}
+		case Decl_Foreign_Fn: {
+			decl_foreign_fn: ^Decl_Foreign_Fn = auto_cast stmt;
+
+			fmt.println("Foreign functions can only be declared at file scope");
+			return true;
+		}
+		case Decl_Fn: {
+			decl_fn: ^Decl_Fn = auto_cast stmt;
+
+			fmt.println("Functions can only be declared at file scope");
+			return true;
+		}
 		case Stmt_Discard: {
 			stmt_d: ^Stmt_Discard = auto_cast stmt;
-			
-			//analyse for arguments
+			err := analyse_expr(stmt_d.call);
+			if err do return true;
 		}
 		case: {
 			fmt.println("Can't analyse stmt");
@@ -144,18 +171,12 @@ resolve_expr_type :: proc(expr: ^Expr) -> bool {
 			if v.name in declarations {
 				is_decl_visible := false;
 
-				if decl.scope.scope == 0 {
+				if decl.scope.parent == nil {
 					is_decl_visible = true;
 				}
 
-				if decl.scope.scope < current_scope.scope {
+				if decl.scope.parent == expr.scope.parent && decl.scope.pos < expr.scope.pos {
 					is_decl_visible = true;
-				}
-
-				if decl.scope.scope == current_scope.scope {
-					if decl.scope.pos < current_scope.pos {
-						is_decl_visible = true;
-					}
 				}
 
 
